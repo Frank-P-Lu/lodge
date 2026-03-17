@@ -1,0 +1,113 @@
+use crate::error::{LodgeError, Result};
+use crate::types::parse_fields;
+use rusqlite::Connection;
+
+const RESERVED_NAMES: &[&str] = &["init", "create", "alter", "sql", "help"];
+
+pub fn create_collection(conn: &Connection, name: &str, fields_spec: &str) -> Result<()> {
+    // Validate name
+    if RESERVED_NAMES.contains(&name) {
+        return Err(LodgeError::ReservedName(name.to_string()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_')
+        || name.starts_with(|c: char| c.is_ascii_digit())
+        || name.is_empty()
+    {
+        return Err(LodgeError::InvalidFieldsFormat(format!(
+            "invalid collection name '{name}'"
+        )));
+    }
+
+    // Check if collection already exists
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM _lodge_meta WHERE collection = ?1",
+        [name],
+        |row| row.get(0),
+    )?;
+    if exists {
+        return Err(LodgeError::CollectionExists(name.to_string()));
+    }
+
+    let fields = parse_fields(fields_spec)?;
+
+    // Build CREATE TABLE
+    let mut col_defs = vec![
+        "id INTEGER PRIMARY KEY AUTOINCREMENT".to_string(),
+    ];
+    for (field_name, field_type) in &fields {
+        col_defs.push(format!("{} {}", field_name, field_type.sql_type()));
+    }
+    col_defs.push("created_at TEXT NOT NULL".to_string());
+    col_defs.push("updated_at TEXT NOT NULL".to_string());
+
+    let create_sql = format!(
+        "CREATE TABLE \"{}\" ({})",
+        name,
+        col_defs.join(", ")
+    );
+    conn.execute(&create_sql, [])?;
+
+    // Insert metadata
+    for (i, (field_name, field_type)) in fields.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO _lodge_meta (collection, field_name, field_type, field_order) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![name, field_name, field_type.as_str(), i as i32],
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn alter_collection(conn: &Connection, name: &str, add_fields_spec: &str) -> Result<()> {
+    // Check collection exists
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM _lodge_meta WHERE collection = ?1",
+        [name],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(LodgeError::CollectionNotFound(name.to_string()));
+    }
+
+    let new_fields = parse_fields(add_fields_spec)?;
+
+    // Get current max order
+    let max_order: i32 = conn.query_row(
+        "SELECT COALESCE(MAX(field_order), -1) FROM _lodge_meta WHERE collection = ?1",
+        [name],
+        |row| row.get(0),
+    )?;
+
+    for (i, (field_name, field_type)) in new_fields.iter().enumerate() {
+        // Check field doesn't already exist
+        let field_exists: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM _lodge_meta WHERE collection = ?1 AND field_name = ?2",
+            rusqlite::params![name, field_name],
+            |row| row.get(0),
+        )?;
+        if field_exists {
+            return Err(LodgeError::InvalidFieldsFormat(format!(
+                "field '{field_name}' already exists in collection '{name}'"
+            )));
+        }
+
+        // ALTER TABLE
+        let alter_sql = format!(
+            "ALTER TABLE \"{}\" ADD COLUMN {} {}",
+            name,
+            field_name,
+            field_type.sql_type()
+        );
+        conn.execute(&alter_sql, [])?;
+
+        // Insert metadata
+        conn.execute(
+            "INSERT INTO _lodge_meta (collection, field_name, field_type, field_order) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![name, field_name, field_type.as_str(), max_order + 1 + i as i32],
+        )?;
+    }
+
+    Ok(())
+}
