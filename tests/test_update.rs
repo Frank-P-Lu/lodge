@@ -22,7 +22,7 @@ fn update_changes_field() {
         .args(["tasks", "update", "1", "--title", "Updated"])
         .output()
         .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let json = common::parse_json_from_output(&output.stdout);
     assert_eq!(json["title"], "Updated");
     assert_eq!(json["priority"], 1); // unchanged
 }
@@ -45,4 +45,25 @@ fn update_validates_field_type() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Invalid value"));
+}
+
+#[test]
+fn test_update_shows_confirmation() {
+    let dir = setup_with_task();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1", "--title", "Changed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated record 1 in 'tasks'"));
+}
+
+#[test]
+fn test_update_no_fields_error() {
+    let dir = setup_with_task();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no fields"))
+        .stderr(predicate::str::contains("Invalid fields format").not());
 }

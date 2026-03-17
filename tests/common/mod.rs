@@ -13,3 +13,12 @@ pub fn setup() -> TempDir {
     lodge_cmd(&dir).args(["init"]).assert().success();
     dir
 }
+
+/// Parse JSON from stdout that may have a confirmation message line before the JSON.
+pub fn parse_json_from_output(stdout: &[u8]) -> serde_json::Value {
+    let text = std::str::from_utf8(stdout).unwrap();
+    let start = text
+        .find(|c| c == '{' || c == '[')
+        .expect("No JSON in output");
+    serde_json::from_str(&text[start..]).unwrap()
+}

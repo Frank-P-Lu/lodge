@@ -39,10 +39,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .long("fields")
                         .required(true)
                         .help("Field definitions (e.g. \"title:text, priority:int\")"),
-                )
-                .arg(Arg::new("fts").long("fts").help(
-                    "Enable full-text search on these fields (comma-separated, must be text type)",
-                )),
+                ),
         )
         .subcommand(
             Command::new("alter")
@@ -55,11 +52,9 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 .arg(
                     Arg::new("add-fields")
                         .long("add-fields")
+                        .required(true)
                         .help("New field definitions to add (e.g. \"status:text, due:date\")"),
-                )
-                .arg(Arg::new("enable-fts").long("enable-fts").help(
-                    "Enable full-text search on these fields (comma-separated, must be text type)",
-                )),
+                ),
         )
         .subcommand(
             Command::new("sql")
@@ -109,6 +104,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 )
                 .subcommand(
                     Command::new("show")
+                        .alias("schema")
                         .about("Show a single view's definition")
                         .arg(
                             Arg::new("name")
@@ -130,6 +126,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                             Arg::new("limit")
                                 .long("limit")
                                 .help("New maximum number of records"),
+                        )
+                        .group(
+                            clap::ArgGroup::new("update_fields")
+                                .args(["where", "sort", "limit"])
+                                .required(true)
+                                .multiple(true),
                         ),
                 )
                 .subcommand(
@@ -164,7 +166,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
         .subcommand(
             Command::new("export")
                 .about("Export collection data")
-                .arg(Arg::new("collection").help("Collection to export"))
+                .arg(
+                    Arg::new("collection")
+                        .help("Collection to export")
+                        .required_unless_present("all")
+                        .conflicts_with("all"),
+                )
                 .arg(
                     Arg::new("all")
                         .long("all")
@@ -182,11 +189,17 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             Command::new("import")
                 .about("Import data into a collection")
                 .arg(Arg::new("collection").help("Collection to import into"))
-                .arg(Arg::new("file").help("File to import from (positional, after collection)"))
                 .arg(
-                    Arg::new("import-file")
+                    Arg::new("file")
                         .long("file")
-                        .help("Import a full export file (all collections)"),
+                        .required(true)
+                        .help("File to import from"),
+                )
+                .arg(
+                    Arg::new("all")
+                        .long("all")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Import all collections from a full export file"),
                 ),
         )
         .subcommand(
@@ -205,6 +218,27 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                     Arg::new("path")
                         .required(true)
                         .help("Path to the snapshot JSON file"),
+                ),
+        )
+        .subcommand(
+            Command::new("run")
+                .about("Run a saved view by name")
+                .arg(
+                    Arg::new("name")
+                        .required(true)
+                        .help("Name of the view to run"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                )
+                .arg(
+                    Arg::new("meta")
+                        .long("meta")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Wrap output with view and collection context"),
                 ),
         );
 
@@ -230,6 +264,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             );
             add_cmd = add_cmd.arg(Arg::new(fname).long(fname).help(help));
         }
+        add_cmd = add_cmd.arg(
+            Arg::new("format")
+                .long("format")
+                .default_value("json")
+                .help("Output format: json, table, csv"),
+        );
         coll_cmd = coll_cmd.subcommand(add_cmd);
 
         // query subcommand
@@ -261,19 +301,31 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 Box::leak(format!("({}) new value", field.field_type.as_str()).into_boxed_str());
             update_cmd = update_cmd.arg(Arg::new(fname).long(fname).help(help));
         }
+        update_cmd = update_cmd.arg(
+            Arg::new("format")
+                .long("format")
+                .default_value("json")
+                .help("Output format: json, table, csv"),
+        );
         coll_cmd = coll_cmd.subcommand(update_cmd);
 
         // delete subcommand
         coll_cmd = coll_cmd.subcommand(
             Command::new("delete")
                 .about("Delete a record by id")
-                .arg(Arg::new("id").required(true).help("Record ID to delete")),
+                .arg(Arg::new("id").required(true).help("Record ID to delete"))
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
         );
 
         // search subcommand (FTS)
         coll_cmd = coll_cmd.subcommand(
             Command::new("search")
-                .about("Full-text search records")
+                .about("Full-text search records (results ordered by relevance; --where/--sort not supported — use query for filtered/sorted access)")
                 .arg(Arg::new("query").required(true).help("Search query"))
                 .arg(
                     Arg::new("limit")

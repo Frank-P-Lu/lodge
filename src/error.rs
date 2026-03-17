@@ -20,6 +20,9 @@ pub enum LodgeError {
     #[error("Invalid fields format: {0}")]
     InvalidFieldsFormat(String),
 
+    #[error("Missing argument: {0}")]
+    MissingArgument(String),
+
     #[error("Reserved name '{0}' cannot be used as a collection name")]
     ReservedName(String),
 
@@ -48,7 +51,7 @@ pub enum LodgeError {
     #[error("Invalid snapshot: {0}")]
     InvalidSnapshot(String),
 
-    #[error("FTS not enabled on collection '{0}'. Use `lodge alter {0} --enable-fts \"field1,field2\"` to enable.")]
+    #[error("FTS not enabled on collection '{0}'. Use `lodge alter {0} --fts \"field1,field2\"` to enable.")]
     FtsNotEnabled(String),
 
     #[error("FTS error: {0}")]

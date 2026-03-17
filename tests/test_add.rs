@@ -88,8 +88,28 @@ fn add_multiple_records_get_incrementing_ids() {
         .output()
         .unwrap();
 
-    let json1: serde_json::Value = serde_json::from_slice(&out1.stdout).unwrap();
-    let json2: serde_json::Value = serde_json::from_slice(&out2.stdout).unwrap();
+    let json1 = common::parse_json_from_output(&out1.stdout);
+    let json2 = common::parse_json_from_output(&out2.stdout);
     assert_eq!(json1["id"], 1);
     assert_eq!(json2["id"], 2);
+}
+
+#[test]
+fn test_add_no_fields_errors() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no fields provided"));
+}
+
+#[test]
+fn test_add_shows_confirmation() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "confirm me"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added record 1 to 'tasks'"));
 }

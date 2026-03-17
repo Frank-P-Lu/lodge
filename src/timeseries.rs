@@ -50,6 +50,15 @@ fn validate_numeric_field(collection: &Collection, field: &str) -> Result<()> {
 pub fn streak(conn: &Connection, collection: &Collection, date_field: &str) -> Result<Value> {
     validate_date_field(collection, date_field)?;
 
+    let null_count: i64 = conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM \"{}\" WHERE {} IS NULL",
+            collection.name, date_field
+        ),
+        [],
+        |row| row.get(0),
+    )?;
+
     // Get distinct dates sorted ascending
     let sql = format!(
         "SELECT DISTINCT substr({date_field}, 1, 10) as d FROM \"{}\" WHERE {date_field} IS NOT NULL ORDER BY d ASC",
@@ -72,7 +81,8 @@ pub fn streak(conn: &Connection, collection: &Collection, date_field: &str) -> R
         return Ok(json!({
             "current_streak": 0,
             "longest_streak": 0,
-            "total_days_with_records": 0
+            "total_days_with_records": 0,
+            "skipped_nulls": null_count
         }));
     }
 
@@ -109,6 +119,7 @@ pub fn streak(conn: &Connection, collection: &Collection, date_field: &str) -> R
         "longest_streak_start": longest.0.format("%Y-%m-%d").to_string(),
         "longest_streak_end": longest.1.format("%Y-%m-%d").to_string(),
         "total_days_with_records": total_days,
+        "skipped_nulls": null_count,
     }))
 }
 

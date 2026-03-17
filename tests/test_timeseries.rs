@@ -180,6 +180,33 @@ fn rolling_average_computes_correctly() {
 }
 
 #[test]
+#[test]
+fn test_streak_reports_skipped_nulls() {
+    let dir = setup_with_gym();
+    // Add records with dates
+    add_gym_entry(&dir, "2026-03-15", "80.0");
+    add_gym_entry(&dir, "2026-03-16", "79.5");
+    // Add records with null dates (only weight, no date)
+    common::lodge_cmd(&dir)
+        .args(["gym", "add", "--weight", "81.0"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["gym", "add", "--weight", "82.0"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["gym", "streak", "--field", "date"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["total_days_with_records"], 2);
+    assert_eq!(result["skipped_nulls"], 2);
+}
+
+#[test]
 fn rolling_average_on_wrong_field_type_errors() {
     let dir = setup_with_gym();
     common::lodge_cmd(&dir)

@@ -1,4 +1,6 @@
 use crate::error::{LodgeError, Result};
+use crate::record::fix_bool_fields;
+use crate::schema::Collection;
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -62,16 +64,17 @@ pub fn create_fts_table(conn: &Connection, collection: &str, text_fields: &[Stri
 
 pub fn search_records(
     conn: &Connection,
-    collection: &str,
+    collection: &Collection,
     query: &str,
     limit: Option<i64>,
 ) -> Result<Vec<Value>> {
-    if !has_fts(conn, collection)? {
-        return Err(LodgeError::FtsNotEnabled(collection.to_string()));
+    let name = &collection.name;
+    if !has_fts(conn, name)? {
+        return Err(LodgeError::FtsNotEnabled(name.to_string()));
     }
 
     let mut sql = format!(
-        "SELECT t.* FROM \"{collection}\" t JOIN \"{collection}_fts\" fts ON t.id = fts.rowid WHERE \"{collection}_fts\" MATCH ?1 ORDER BY fts.rank"
+        "SELECT t.* FROM \"{name}\" t JOIN \"{name}_fts\" fts ON t.id = fts.rowid WHERE \"{name}_fts\" MATCH ?1 ORDER BY fts.rank"
     );
     if let Some(l) = limit {
         sql.push_str(&format!(" LIMIT {l}"));
@@ -104,9 +107,26 @@ pub fn search_records(
 
     let mut results = Vec::new();
     for row in rows {
-        results.push(row.map_err(|e| LodgeError::Fts(e.to_string()))?);
+        let mut record = row.map_err(|e| LodgeError::Fts(e.to_string()))?;
+        fix_bool_fields(&mut record, collection);
+        results.push(record);
     }
     Ok(results)
+}
+
+pub fn drop_fts_table(conn: &Connection, collection: &str) -> Result<()> {
+    conn.execute_batch(&format!(
+        "DROP TABLE IF EXISTS \"{collection}_fts\";
+         DROP TRIGGER IF EXISTS \"{collection}_fts_ai\";
+         DROP TRIGGER IF EXISTS \"{collection}_fts_ad\";
+         DROP TRIGGER IF EXISTS \"{collection}_fts_au\";"
+    ))
+    .map_err(|e| LodgeError::Fts(format!("failed to drop FTS table: {e}")))?;
+    conn.execute(
+        "DELETE FROM _lodge_fts_meta WHERE collection = ?1",
+        [collection],
+    )?;
+    Ok(())
 }
 
 pub fn has_fts(conn: &Connection, collection: &str) -> Result<bool> {

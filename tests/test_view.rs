@@ -335,7 +335,9 @@ fn view_update_no_fields_errors() {
         .args(["view", "update", "v1"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("specify at least one"));
+        .stderr(predicate::str::contains(
+            "required arguments were not provided",
+        ));
 }
 
 #[test]

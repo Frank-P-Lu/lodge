@@ -43,3 +43,22 @@ fn delete_nonexistent_id_errors() {
         .failure()
         .stderr(predicate::str::contains("not found"));
 }
+
+#[test]
+fn test_delete_shows_confirmation() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["create", "tasks", "--fields", "title:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "bye"])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args(["tasks", "delete", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted record 1 from 'tasks'"));
+}

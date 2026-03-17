@@ -56,29 +56,15 @@ fn run() -> error::Result<()> {
                 .iter()
                 .map(|f| format!("{}:{}", f.name, f.field_type.as_str()))
                 .collect();
-            // Handle --fts flag
-            if let Some(fts_spec) = sub_m.get_one::<String>("fts") {
-                let fts_fields: Vec<String> =
-                    fts_spec.split(',').map(|s| s.trim().to_string()).collect();
-                // Validate all FTS fields are text type
-                for fname in &fts_fields {
-                    let field = coll
-                        .fields
-                        .iter()
-                        .find(|f| f.name == *fname)
-                        .ok_or_else(|| {
-                            LodgeError::InvalidFieldsFormat(format!(
-                                "FTS field '{fname}' not found in collection '{name}'"
-                            ))
-                        })?;
-                    if field.field_type != types::FieldType::Text {
-                        return Err(LodgeError::InvalidFieldsFormat(format!(
-                            "FTS field '{fname}' must be text type, got {}",
-                            field.field_type.as_str()
-                        )));
-                    }
-                }
-                fts::create_fts_table(&conn, name, &fts_fields)?;
+            // Auto-enable FTS for all text fields
+            let text_fields: Vec<String> = coll
+                .fields
+                .iter()
+                .filter(|f| f.field_type == types::FieldType::Text)
+                .map(|f| f.name.clone())
+                .collect();
+            if !text_fields.is_empty() {
+                fts::create_fts_table(&conn, name, &text_fields)?;
             }
             println!(
                 "Created collection '{}' with fields: {}",
@@ -90,39 +76,28 @@ fn run() -> error::Result<()> {
         Some(("alter", sub_m)) => {
             let conn = db::open(&cwd)?;
             let name = sub_m.get_one::<String>("name").unwrap();
-            let add_fields = sub_m.get_one::<String>("add-fields");
-            let enable_fts = sub_m.get_one::<String>("enable-fts");
-            if add_fields.is_none() && enable_fts.is_none() {
-                return Err(LodgeError::InvalidFieldsFormat(
-                    "specify --add-fields and/or --enable-fts".to_string(),
-                ));
-            }
-            if let Some(fields_spec) = add_fields {
-                collection::alter_collection(&conn, name, fields_spec)?;
-            }
-            let coll = schema::load_collection(&conn, name)?
+            let fields_spec = sub_m.get_one::<String>("add-fields").unwrap();
+            let coll_before = schema::load_collection(&conn, name)?
                 .ok_or_else(|| LodgeError::CollectionNotFound(name.to_string()))?;
-            if let Some(fts_spec) = enable_fts {
-                let fts_fields: Vec<String> =
-                    fts_spec.split(',').map(|s| s.trim().to_string()).collect();
-                for fname in &fts_fields {
-                    let field = coll
-                        .fields
-                        .iter()
-                        .find(|f| f.name == *fname)
-                        .ok_or_else(|| {
-                            LodgeError::InvalidFieldsFormat(format!(
-                                "FTS field '{fname}' not found in collection '{name}'"
-                            ))
-                        })?;
-                    if field.field_type != types::FieldType::Text {
-                        return Err(LodgeError::InvalidFieldsFormat(format!(
-                            "FTS field '{fname}' must be text type, got {}",
-                            field.field_type.as_str()
-                        )));
-                    }
+            let prev_text_count = coll_before
+                .fields
+                .iter()
+                .filter(|f| f.field_type == types::FieldType::Text)
+                .count();
+            collection::alter_collection(&conn, name, fields_spec)?;
+            let coll = schema::load_collection(&conn, name)?.unwrap();
+            let all_text_fields: Vec<String> = coll
+                .fields
+                .iter()
+                .filter(|f| f.field_type == types::FieldType::Text)
+                .map(|f| f.name.clone())
+                .collect();
+            // If new text fields were added, rebuild FTS index
+            if all_text_fields.len() > prev_text_count {
+                if fts::has_fts(&conn, name)? {
+                    fts::drop_fts_table(&conn, name)?;
                 }
-                fts::create_fts_table(&conn, name, &fts_fields)?;
+                fts::create_fts_table(&conn, name, &all_text_fields)?;
             }
             let fields_desc: Vec<String> = coll
                 .fields
@@ -180,11 +155,6 @@ fn run() -> error::Result<()> {
                     let limit = update_m
                         .get_one::<String>("limit")
                         .and_then(|s| s.parse::<i64>().ok());
-                    if where_clause.is_none() && sort.is_none() && limit.is_none() {
-                        return Err(LodgeError::InvalidFieldsFormat(
-                            "specify at least one of --where, --sort, --limit".to_string(),
-                        ));
-                    }
                     view::update_view(&conn, name, where_clause, sort, limit)?;
                     println!("Updated view '{name}'");
                     Ok(())
@@ -221,11 +191,7 @@ fn run() -> error::Result<()> {
                 let result = export::export_all(&conn)?;
                 println!("{result}");
             } else {
-                let name = sub_m.get_one::<String>("collection").ok_or_else(|| {
-                    LodgeError::InvalidFieldsFormat(
-                        "specify a collection name or use --all".to_string(),
-                    )
-                })?;
+                let name = sub_m.get_one::<String>("collection").unwrap();
                 let format_str = sub_m.get_one::<String>("format").unwrap();
                 let format = Format::from_str(format_str).unwrap_or(Format::Json);
                 let result = export::export_collection(&conn, name, &format)?;
@@ -250,27 +216,41 @@ fn run() -> error::Result<()> {
         }
         Some(("import", sub_m)) => {
             let conn = db::open(&cwd)?;
-            if let Some(file_path) = sub_m.get_one::<String>("import-file") {
-                let data = std::fs::read_to_string(file_path)?;
+            let file_path = sub_m.get_one::<String>("file").unwrap();
+            let data = std::fs::read_to_string(file_path)?;
+            if sub_m.get_flag("all") {
                 let results = import::import_full(&conn, &data)?;
                 for (name, count) in &results {
                     println!("Imported {count} records into '{name}'");
                 }
-                Ok(())
             } else {
                 let name = sub_m.get_one::<String>("collection").ok_or_else(|| {
-                    LodgeError::InvalidFieldsFormat(
-                        "specify a collection name or use --file".to_string(),
+                    LodgeError::MissingArgument(
+                        "specify a collection name or use --all".to_string(),
                     )
                 })?;
-                let file_path = sub_m.get_one::<String>("file").ok_or_else(|| {
-                    LodgeError::InvalidFieldsFormat("specify a file to import".to_string())
-                })?;
-                let data = std::fs::read_to_string(file_path)?;
                 let count = import::import_collection(&conn, name, &data)?;
                 println!("Imported {count} records into '{name}'");
-                Ok(())
             }
+            Ok(())
+        }
+        Some(("run", run_m)) => {
+            let conn = db::open(&cwd)?;
+            let name = run_m.get_one::<String>("name").unwrap();
+            let format_str = run_m.get_one::<String>("format").unwrap();
+            let format = Format::from_str(format_str).unwrap_or(Format::Json);
+            let (collection_name, records) = view::run_view(&conn, name)?;
+            if run_m.get_flag("meta") {
+                let wrapped = serde_json::json!({
+                    "view": name,
+                    "collection": collection_name,
+                    "records": records,
+                });
+                println!("{wrapped}");
+            } else {
+                println!("{}", output::format_output(&records, &format));
+            }
+            Ok(())
         }
         Some((collection_name, sub_m)) => {
             let conn = db::open(&cwd)?;
@@ -285,8 +265,16 @@ fn run() -> error::Result<()> {
                             values.push((field.name.clone(), val.clone()));
                         }
                     }
+                    if values.is_empty() {
+                        return Err(LodgeError::MissingArgument(
+                            "no fields provided -- specify at least one field".into(),
+                        ));
+                    }
+                    let format_str = add_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let result = record::add_record(&conn, &coll, &values)?;
-                    println!("{}", output::format_single(&result, &Format::Json));
+                    println!("Added record {} to '{}'", result["id"], collection_name);
+                    println!("{}", output::format_single(&result, &format));
                     Ok(())
                 }
                 Some(("query", query_m)) => {
@@ -319,12 +307,15 @@ fn run() -> error::Result<()> {
                         }
                     }
                     if values.is_empty() {
-                        return Err(LodgeError::InvalidFieldsFormat(
+                        return Err(LodgeError::MissingArgument(
                             "no fields to update".to_string(),
                         ));
                     }
+                    let format_str = update_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let result = record::update_record(&conn, &coll, id, &values)?;
-                    println!("{}", output::format_single(&result, &Format::Json));
+                    println!("Updated record {id} in '{collection_name}'");
+                    println!("{}", output::format_single(&result, &format));
                     Ok(())
                 }
                 Some(("delete", delete_m)) => {
@@ -338,8 +329,11 @@ fn run() -> error::Result<()> {
                                 field_type: "int".to_string(),
                                 value: delete_m.get_one::<String>("id").unwrap().clone(),
                             })?;
+                    let format_str = delete_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let result = record::delete_record(&conn, &coll, id)?;
-                    println!("{}", output::format_single(&result, &Format::Json));
+                    println!("Deleted record {id} from '{collection_name}'");
+                    println!("{}", output::format_single(&result, &format));
                     Ok(())
                 }
                 Some(("search", search_m)) => {
@@ -349,7 +343,7 @@ fn run() -> error::Result<()> {
                         .and_then(|s| s.parse::<i64>().ok());
                     let format_str = search_m.get_one::<String>("format").unwrap();
                     let format = Format::from_str(format_str).unwrap_or(Format::Json);
-                    let results = fts::search_records(&conn, collection_name, query, limit)?;
+                    let results = fts::search_records(&conn, &coll, query, limit)?;
                     println!("{}", output::format_output(&results, &format));
                     Ok(())
                 }
@@ -367,7 +361,11 @@ fn run() -> error::Result<()> {
                         .get_one::<String>("threshold")
                         .unwrap()
                         .parse()
-                        .unwrap_or(1);
+                        .map_err(|_| LodgeError::InvalidValue {
+                            field: "threshold".to_string(),
+                            field_type: "int".to_string(),
+                            value: gaps_m.get_one::<String>("threshold").unwrap().clone(),
+                        })?;
                     let format_str = gaps_m.get_one::<String>("format").unwrap();
                     let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let results = timeseries::gaps(&conn, &coll, field, threshold)?;
@@ -377,11 +375,16 @@ fn run() -> error::Result<()> {
                 Some(("rolling-avg", avg_m)) => {
                     let field = avg_m.get_one::<String>("field").unwrap();
                     let over = avg_m.get_one::<String>("over").unwrap();
-                    let window: i64 = avg_m
-                        .get_one::<String>("window")
-                        .unwrap()
-                        .parse()
-                        .unwrap_or(7);
+                    let window: i64 =
+                        avg_m
+                            .get_one::<String>("window")
+                            .unwrap()
+                            .parse()
+                            .map_err(|_| LodgeError::InvalidValue {
+                                field: "window".to_string(),
+                                field_type: "int".to_string(),
+                                value: avg_m.get_one::<String>("window").unwrap().clone(),
+                            })?;
                     let format_str = avg_m.get_one::<String>("format").unwrap();
                     let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let results = timeseries::rolling_average(&conn, &coll, field, over, window)?;

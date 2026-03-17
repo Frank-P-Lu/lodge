@@ -19,7 +19,7 @@ fn import_json_array() {
     std::fs::write(&file_path, json_data).unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "tasks", file_path.to_str().unwrap()])
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 2 records"));
@@ -41,7 +41,7 @@ fn import_json_envelope() {
     std::fs::write(&file_path, json_data).unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "tasks", file_path.to_str().unwrap()])
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 1 records"));
@@ -55,7 +55,7 @@ fn import_csv() {
     std::fs::write(&file_path, csv_data).unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "tasks", file_path.to_str().unwrap()])
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 2 records"));
@@ -69,7 +69,7 @@ fn import_validates_types() {
     std::fs::write(&file_path, json_data).unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "tasks", file_path.to_str().unwrap()])
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Invalid value"));
@@ -82,7 +82,7 @@ fn import_nonexistent_collection_errors() {
     std::fs::write(&file_path, "[]").unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "nope", file_path.to_str().unwrap()])
+        .args(["import", "nope", "--file", file_path.to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not found"));
@@ -113,7 +113,7 @@ fn import_full_export() {
     std::fs::write(&file_path, &export_data).unwrap();
 
     common::lodge_cmd(&dir2)
-        .args(["import", "--file", file_path.to_str().unwrap()])
+        .args(["import", "--all", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 1 records into 'tasks'"));
@@ -158,7 +158,7 @@ fn import_round_trip() {
     std::fs::write(&file_path, &export_data).unwrap();
 
     common::lodge_cmd(&dir2)
-        .args(["import", "tasks", file_path.to_str().unwrap()])
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 2 records"));
@@ -192,7 +192,7 @@ fn import_full_creates_missing_collections() {
     std::fs::write(&file_path, full_export).unwrap();
 
     common::lodge_cmd(&dir)
-        .args(["import", "--file", file_path.to_str().unwrap()])
+        .args(["import", "--all", "--file", file_path.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Imported 1 records into 'books'"));
@@ -205,4 +205,47 @@ fn import_full_creates_missing_collections() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json.as_array().unwrap().len(), 1);
     assert_eq!(json.as_array().unwrap()[0]["title"], "Rust in Action");
+}
+
+#[test]
+fn test_import_single_collection_with_file_flag() {
+    let dir = setup_with_collection();
+    let json_data = r#"[{"title": "Flagged", "priority": 3}]"#;
+    let file_path = dir.path().join("data.json");
+    std::fs::write(&file_path, json_data).unwrap();
+
+    common::lodge_cmd(&dir)
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Imported 1 records"));
+}
+
+#[test]
+fn test_import_all_with_file_flag() {
+    let dir = common::setup();
+    let full_export = r#"{
+        "lodge_export": true,
+        "collections": [
+            {
+                "collection": "items",
+                "fields": [{"name": "name", "type": "text"}],
+                "records": [{"name": "Widget"}]
+            }
+        ]
+    }"#;
+    let file_path = dir.path().join("dump.json");
+    std::fs::write(&file_path, full_export).unwrap();
+
+    common::lodge_cmd(&dir)
+        .args(["import", "--all", "--file", file_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Imported 1 records into 'items'"));
+}
+
+#[test]
+fn test_import_no_args_error() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir).args(["import"]).assert().failure();
 }

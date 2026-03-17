@@ -4,6 +4,7 @@ use rusqlite::Connection;
 
 const RESERVED_NAMES: &[&str] = &[
     "init", "create", "alter", "sql", "help", "view", "export", "import", "snapshot", "restore",
+    "run",
 ];
 
 pub fn create_collection(conn: &Connection, name: &str, fields_spec: &str) -> Result<()> {

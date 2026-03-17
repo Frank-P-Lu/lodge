@@ -115,7 +115,7 @@ fn format_csv(records: &[Value]) -> String {
             let row: Vec<String> = columns
                 .iter()
                 .map(|col| {
-                    let val = value_to_display(map.get(col).unwrap_or(&Value::Null));
+                    let val = csv_value_to_display(map.get(col).unwrap_or(&Value::Null));
                     if val.contains(',') || val.contains('"') || val.contains('\n') {
                         format!("\"{}\"", val.replace('"', "\"\""))
                     } else {
@@ -138,5 +138,12 @@ fn value_to_display(val: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         other => other.to_string(),
+    }
+}
+
+fn csv_value_to_display(val: &Value) -> String {
+    match val {
+        Value::Null => String::new(),
+        other => value_to_display(other),
     }
 }
