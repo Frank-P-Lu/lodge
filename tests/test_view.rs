@@ -341,6 +341,69 @@ fn view_update_no_fields_errors() {
 }
 
 #[test]
+fn run_shorthand_executes_view() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "open_tasks",
+            "--collection",
+            "tasks",
+            "--where",
+            "status = 'open'",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["run", "open_tasks"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let records = json.as_array().unwrap();
+    assert_eq!(records.len(), 2);
+}
+
+#[test]
+fn run_shorthand_meta_flag() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "open_tasks",
+            "--collection",
+            "tasks",
+            "--where",
+            "status = 'open'",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["run", "open_tasks", "--meta"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["view"], "open_tasks");
+    assert_eq!(json["collection"], "tasks");
+    assert_eq!(json["records"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn run_shorthand_nonexistent_errors() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["run", "no_such_view"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("no_such_view"));
+}
+
+#[test]
 fn view_run_meta_flag() {
     let dir = setup_with_tasks();
     common::lodge_cmd(&dir)
