@@ -2,16 +2,16 @@ use crate::error::{LodgeError, Result};
 use crate::types::parse_fields;
 use rusqlite::Connection;
 
-const RESERVED_NAMES: &[&str] = &["init", "create", "alter", "sql", "help"];
+const RESERVED_NAMES: &[&str] = &[
+    "init", "create", "alter", "sql", "help", "view", "export", "import",
+];
 
 pub fn create_collection(conn: &Connection, name: &str, fields_spec: &str) -> Result<()> {
     // Validate name
     if RESERVED_NAMES.contains(&name) {
         return Err(LodgeError::ReservedName(name.to_string()));
     }
-    if !name
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_')
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_')
         || name.starts_with(|c: char| c.is_ascii_digit())
         || name.is_empty()
     {
@@ -33,20 +33,14 @@ pub fn create_collection(conn: &Connection, name: &str, fields_spec: &str) -> Re
     let fields = parse_fields(fields_spec)?;
 
     // Build CREATE TABLE
-    let mut col_defs = vec![
-        "id INTEGER PRIMARY KEY AUTOINCREMENT".to_string(),
-    ];
+    let mut col_defs = vec!["id INTEGER PRIMARY KEY AUTOINCREMENT".to_string()];
     for (field_name, field_type) in &fields {
         col_defs.push(format!("{} {}", field_name, field_type.sql_type()));
     }
     col_defs.push("created_at TEXT NOT NULL".to_string());
     col_defs.push("updated_at TEXT NOT NULL".to_string());
 
-    let create_sql = format!(
-        "CREATE TABLE \"{}\" ({})",
-        name,
-        col_defs.join(", ")
-    );
+    let create_sql = format!("CREATE TABLE \"{}\" ({})", name, col_defs.join(", "));
     conn.execute(&create_sql, [])?;
 
     // Insert metadata

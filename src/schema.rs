@@ -34,8 +34,7 @@ pub fn load_collections(conn: &Connection) -> Result<Vec<Collection>> {
     let mut collections: Vec<Collection> = Vec::new();
     for row in rows {
         let (coll_name, field_name, field_type_str, _field_order) = row?;
-        let field_type = FieldType::from_str(&field_type_str)
-            .unwrap_or(FieldType::Text); // fallback for unknown types
+        let field_type = FieldType::from_str(&field_type_str).unwrap_or(FieldType::Text); // fallback for unknown types
 
         let field = Field {
             name: field_name,

@@ -30,7 +30,10 @@ fn init_twice_gives_error() {
 fn init_creates_meta_table() {
     let dir = common::setup();
     common::lodge_cmd(&dir)
-        .args(["sql", "SELECT name FROM sqlite_master WHERE type='table' AND name='_lodge_meta'"])
+        .args([
+            "sql",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='_lodge_meta'",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("_lodge_meta"));

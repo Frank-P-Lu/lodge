@@ -33,6 +33,15 @@ pub enum LodgeError {
     #[error("Record with id {0} not found")]
     RecordNotFound(i64),
 
+    #[error("View '{0}' already exists")]
+    ViewExists(String),
+
+    #[error("View '{0}' not found")]
+    ViewNotFound(String),
+
+    #[error("Import error: {0}")]
+    ImportError(String),
+
     #[error("SQL error: {0}")]
     Sql(String),
 

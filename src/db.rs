@@ -29,6 +29,7 @@ pub fn init(dir: &Path) -> Result<()> {
     let db_path = lodge_dir.join(DB_FILE);
     let conn = Connection::open(&db_path)?;
     create_meta_table(&conn)?;
+    create_views_table(&conn)?;
     Ok(())
 }
 
@@ -37,6 +38,8 @@ pub fn open(start: &Path) -> Result<Connection> {
     let lodge_dir = find_lodge_dir(start).ok_or(LodgeError::NotInitialized)?;
     let db_path = lodge_dir.join(DB_FILE);
     let conn = Connection::open(db_path)?;
+    // Migrate: ensure _lodge_views exists for older databases
+    create_views_table(&conn)?;
     Ok(conn)
 }
 
@@ -48,6 +51,20 @@ fn create_meta_table(conn: &Connection) -> Result<()> {
             field_type TEXT NOT NULL,
             field_order INTEGER NOT NULL,
             PRIMARY KEY (collection, field_name)
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_views_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _lodge_views (
+            name       TEXT PRIMARY KEY,
+            collection TEXT NOT NULL,
+            where_clause TEXT,
+            sort       TEXT,
+            lim        INTEGER,
+            created_at TEXT NOT NULL
         );",
     )?;
     Ok(())

@@ -66,12 +66,10 @@ pub fn query_records(
         sql.push_str(&format!(" LIMIT {l}"));
     }
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| LodgeError::Sql(e.to_string()))?;
-    let column_names: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| LodgeError::Sql(e.to_string()))?;
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
         .query_map([], |row| {
@@ -99,12 +97,14 @@ pub fn update_record(
     values: &[(String, String)],
 ) -> Result<Value> {
     // Check record exists
-    let exists: bool = conn
-        .query_row(
-            &format!("SELECT COUNT(*) > 0 FROM \"{}\" WHERE id = ?1", collection.name),
-            [id],
-            |row| row.get(0),
-        )?;
+    let exists: bool = conn.query_row(
+        &format!(
+            "SELECT COUNT(*) > 0 FROM \"{}\" WHERE id = ?1",
+            collection.name
+        ),
+        [id],
+        |row| row.get(0),
+    )?;
     if !exists {
         return Err(LodgeError::RecordNotFound(id));
     }
@@ -166,12 +166,10 @@ pub fn delete_record(conn: &Connection, collection: &Collection, id: i64) -> Res
 }
 
 pub fn execute_sql(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
-    let mut stmt = conn.prepare(sql).map_err(|e| LodgeError::Sql(e.to_string()))?;
-    let column_names: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| LodgeError::Sql(e.to_string()))?;
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
         .query_map([], |row| {
@@ -195,11 +193,7 @@ pub fn execute_sql(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
 fn get_record_by_id(conn: &Connection, collection: &Collection, id: i64) -> Result<Value> {
     let sql = format!("SELECT * FROM \"{}\" WHERE id = ?1", collection.name);
     let mut stmt = conn.prepare(&sql)?;
-    let column_names: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     stmt.query_row([id], |row| {
         let mut obj = serde_json::Map::new();

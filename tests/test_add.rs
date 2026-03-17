@@ -5,7 +5,12 @@ use predicates::prelude::*;
 fn setup_with_tasks() -> tempfile::TempDir {
     let dir = common::setup();
     common::lodge_cmd(&dir)
-        .args(["create", "tasks", "--fields", "title:text, priority:int, due:date"])
+        .args([
+            "create",
+            "tasks",
+            "--fields",
+            "title:text, priority:int, due:date",
+        ])
         .assert()
         .success();
     dir
@@ -27,7 +32,14 @@ fn add_record_returns_json_with_id() {
 fn add_record_validates_int() {
     let dir = setup_with_tasks();
     common::lodge_cmd(&dir)
-        .args(["tasks", "add", "--title", "foo", "--priority", "not_a_number"])
+        .args([
+            "tasks",
+            "add",
+            "--title",
+            "foo",
+            "--priority",
+            "not_a_number",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Invalid value"));

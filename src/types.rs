@@ -48,20 +48,26 @@ impl FieldType {
     pub fn validate(&self, value: &str, field_name: &str) -> Result<String> {
         match self {
             FieldType::Text => Ok(value.to_string()),
-            FieldType::Int => value.parse::<i64>().map(|v| v.to_string()).map_err(|_| {
-                LodgeError::InvalidValue {
-                    field: field_name.to_string(),
-                    field_type: "int".to_string(),
-                    value: value.to_string(),
-                }
-            }),
-            FieldType::Real => value.parse::<f64>().map(|v| v.to_string()).map_err(|_| {
-                LodgeError::InvalidValue {
-                    field: field_name.to_string(),
-                    field_type: "real".to_string(),
-                    value: value.to_string(),
-                }
-            }),
+            FieldType::Int => {
+                value
+                    .parse::<i64>()
+                    .map(|v| v.to_string())
+                    .map_err(|_| LodgeError::InvalidValue {
+                        field: field_name.to_string(),
+                        field_type: "int".to_string(),
+                        value: value.to_string(),
+                    })
+            }
+            FieldType::Real => {
+                value
+                    .parse::<f64>()
+                    .map(|v| v.to_string())
+                    .map_err(|_| LodgeError::InvalidValue {
+                        field: field_name.to_string(),
+                        field_type: "real".to_string(),
+                        value: value.to_string(),
+                    })
+            }
             FieldType::Bool => match value.to_lowercase().as_str() {
                 "true" | "1" | "yes" => Ok("1".to_string()),
                 "false" | "0" | "no" => Ok("0".to_string()),
@@ -71,15 +77,13 @@ impl FieldType {
                     value: value.to_string(),
                 }),
             },
-            FieldType::Date => {
-                chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-                    .map(|d| d.format("%Y-%m-%d").to_string())
-                    .map_err(|_| LodgeError::InvalidValue {
-                        field: field_name.to_string(),
-                        field_type: "date".to_string(),
-                        value: value.to_string(),
-                    })
-            }
+            FieldType::Date => chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .map_err(|_| LodgeError::InvalidValue {
+                    field: field_name.to_string(),
+                    field_type: "date".to_string(),
+                    value: value.to_string(),
+                }),
             FieldType::Datetime => {
                 // Try ISO 8601 formats
                 if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
@@ -119,9 +123,7 @@ pub fn parse_fields(spec: &str) -> Result<Vec<(String, FieldType)>> {
             .ok_or_else(|| LodgeError::InvalidFieldsFormat(part.to_string()))?;
 
         // Validate field name is a valid identifier
-        if !name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '_')
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_')
             || name.starts_with(|c: char| c.is_ascii_digit())
         {
             return Err(LodgeError::InvalidFieldsFormat(format!(
