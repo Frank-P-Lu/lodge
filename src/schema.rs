@@ -56,6 +56,36 @@ pub fn load_collections(conn: &Connection) -> Result<Vec<Collection>> {
 
 /// Load a single collection by name.
 pub fn load_collection(conn: &Connection, name: &str) -> Result<Option<Collection>> {
-    let collections = load_collections(conn)?;
-    Ok(collections.into_iter().find(|c| c.name == name))
+    let mut stmt = conn.prepare(
+        "SELECT field_name, field_type, field_order
+         FROM _lodge_meta
+         WHERE collection = ?1
+         ORDER BY field_order",
+    )?;
+
+    let rows = stmt.query_map([name], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+        ))
+    })?;
+
+    let mut fields = Vec::new();
+    for row in rows {
+        let (field_name, field_type_str) = row?;
+        let field_type = FieldType::from_str(&field_type_str).unwrap_or(FieldType::Text);
+        fields.push(Field {
+            name: field_name,
+            field_type,
+        });
+    }
+
+    if fields.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(Collection {
+            name: name.to_string(),
+            fields,
+        }))
+    }
 }

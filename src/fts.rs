@@ -1,5 +1,5 @@
 use crate::error::{LodgeError, Result};
-use crate::record::fix_bool_fields;
+use crate::record::{fix_bool_fields, row_to_json};
 use crate::schema::Collection;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -86,23 +86,7 @@ pub fn search_records(
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
-        .query_map([query], |row| {
-            let mut obj = serde_json::Map::new();
-            for (i, col) in column_names.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i)?;
-                let json_val = match val {
-                    rusqlite::types::Value::Null => Value::Null,
-                    rusqlite::types::Value::Integer(n) => serde_json::json!(n),
-                    rusqlite::types::Value::Real(f) => serde_json::json!(f),
-                    rusqlite::types::Value::Text(s) => serde_json::json!(s),
-                    rusqlite::types::Value::Blob(b) => {
-                        serde_json::json!(format!("<blob {} bytes>", b.len()))
-                    }
-                };
-                obj.insert(col.clone(), json_val);
-            }
-            Ok(Value::Object(obj))
-        })
+        .query_map([query], |row| row_to_json(row, &column_names))
         .map_err(|e| LodgeError::Fts(format!("search query failed: {e}")))?;
 
     let mut results = Vec::new();

@@ -1,4 +1,5 @@
 use crate::error::{LodgeError, Result};
+use crate::record::row_to_json;
 use crate::schema;
 use crate::types::FieldType;
 use rusqlite::Connection;
@@ -27,23 +28,7 @@ pub fn create_snapshot(
             .map_err(|e| LodgeError::Snapshot(e.to_string()))?;
         let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
         let rows = stmt
-            .query_map([], |row| {
-                let mut obj = serde_json::Map::new();
-                for (i, col) in column_names.iter().enumerate() {
-                    let val: rusqlite::types::Value = row.get(i)?;
-                    let json_val = match val {
-                        rusqlite::types::Value::Null => Value::Null,
-                        rusqlite::types::Value::Integer(n) => json!(n),
-                        rusqlite::types::Value::Real(f) => json!(f),
-                        rusqlite::types::Value::Text(s) => json!(s),
-                        rusqlite::types::Value::Blob(b) => {
-                            json!(format!("<blob {} bytes>", b.len()))
-                        }
-                    };
-                    obj.insert(col.clone(), json_val);
-                }
-                Ok(Value::Object(obj))
-            })
+            .query_map([], |row| row_to_json(row, &column_names))
             .map_err(|e| LodgeError::Snapshot(e.to_string()))?;
 
         let mut records = Vec::new();

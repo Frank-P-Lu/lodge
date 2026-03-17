@@ -20,6 +20,9 @@ pub enum LodgeError {
     #[error("Invalid fields format: {0}")]
     InvalidFieldsFormat(String),
 
+    #[error("Invalid name '{0}': names must contain only letters, digits, and underscores, and cannot start with a digit")]
+    InvalidName(String),
+
     #[error("Missing argument: {0}")]
     MissingArgument(String),
 
@@ -65,6 +68,12 @@ pub enum LodgeError {
         collection: String,
         expected_type: String,
     },
+
+    #[error("Field '{field}' not found in collection '{collection}'")]
+    FieldNotFound { field: String, collection: String },
+
+    #[error("Cannot modify protected field '{0}' (id, created_at, updated_at are auto-managed)")]
+    ProtectedField(String),
 
     #[error("SQL error: {0}")]
     Sql(String),

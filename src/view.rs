@@ -1,3 +1,4 @@
+use crate::collection::collection_exists;
 use crate::error::{LodgeError, Result};
 use crate::record;
 use crate::schema;
@@ -9,6 +10,15 @@ struct View {
     where_clause: Option<String>,
     sort: Option<String>,
     limit: Option<i64>,
+}
+
+fn view_exists(conn: &Connection, name: &str) -> Result<bool> {
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM _lodge_views WHERE name = ?1",
+        [name],
+        |row| row.get(0),
+    )?;
+    Ok(exists)
 }
 
 pub fn create_view(
@@ -24,28 +34,14 @@ pub fn create_view(
         || name.starts_with(|c: char| c.is_ascii_digit())
         || name.is_empty()
     {
-        return Err(LodgeError::InvalidFieldsFormat(format!(
-            "invalid view name '{name}'"
-        )));
+        return Err(LodgeError::InvalidName(name.to_string()));
     }
 
-    // Check collection exists
-    let coll_exists: bool = conn.query_row(
-        "SELECT COUNT(*) > 0 FROM _lodge_meta WHERE collection = ?1",
-        [collection],
-        |row| row.get(0),
-    )?;
-    if !coll_exists {
+    if !collection_exists(conn, collection)? {
         return Err(LodgeError::CollectionNotFound(collection.to_string()));
     }
 
-    // Check view name not taken
-    let view_exists: bool = conn.query_row(
-        "SELECT COUNT(*) > 0 FROM _lodge_views WHERE name = ?1",
-        [name],
-        |row| row.get(0),
-    )?;
-    if view_exists {
+    if view_exists(conn, name)? {
         return Err(LodgeError::ViewExists(name.to_string()));
     }
 

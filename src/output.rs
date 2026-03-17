@@ -1,3 +1,4 @@
+use crate::error::{LodgeError, Result};
 use serde_json::Value;
 
 pub enum Format {
@@ -17,24 +18,26 @@ impl Format {
     }
 }
 
-pub fn format_output(records: &[Value], format: &Format) -> String {
+pub fn format_output(records: &[Value], format: &Format) -> Result<String> {
     match format {
         Format::Json => format_json(records),
-        Format::Table => format_table(records),
-        Format::Csv => format_csv(records),
+        Format::Table => Ok(format_table(records)),
+        Format::Csv => Ok(format_csv(records)),
     }
 }
 
-pub fn format_single(record: &Value, format: &Format) -> String {
+pub fn format_single(record: &Value, format: &Format) -> Result<String> {
     match format {
-        Format::Json => serde_json::to_string_pretty(record).unwrap_or_default(),
-        Format::Table => format_table(&[record.clone()]),
-        Format::Csv => format_csv(&[record.clone()]),
+        Format::Json => serde_json::to_string_pretty(record)
+            .map_err(|e| LodgeError::Sql(format!("JSON serialization failed: {e}"))),
+        Format::Table => Ok(format_table(std::slice::from_ref(record))),
+        Format::Csv => Ok(format_csv(std::slice::from_ref(record))),
     }
 }
 
-fn format_json(records: &[Value]) -> String {
-    serde_json::to_string_pretty(records).unwrap_or_default()
+fn format_json(records: &[Value]) -> Result<String> {
+    serde_json::to_string_pretty(records)
+        .map_err(|e| LodgeError::Sql(format!("JSON serialization failed: {e}")))
 }
 
 fn format_table(records: &[Value]) -> String {

@@ -89,15 +89,7 @@ pub fn query_records(
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
-        .query_map([], |row| {
-            let mut obj = serde_json::Map::new();
-            for (i, col) in column_names.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i)?;
-                let json_val = sqlite_to_json(val);
-                obj.insert(col.clone(), json_val);
-            }
-            Ok(Value::Object(obj))
-        })
+        .query_map([], |row| row_to_json(row, &column_names))
         .map_err(|e| LodgeError::Sql(e.to_string()))?;
 
     let mut results = Vec::new();
@@ -184,27 +176,42 @@ pub fn delete_record(conn: &Connection, collection: &Collection, id: i64) -> Res
     Ok(record)
 }
 
-pub fn execute_sql(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
+pub fn execute_sql(conn: &Connection, sql: &str, collections: &[Collection]) -> Result<Vec<Value>> {
+    use std::collections::HashSet;
+
     let mut stmt = conn
         .prepare(sql)
         .map_err(|e| LodgeError::Sql(e.to_string()))?;
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
-        .query_map([], |row| {
-            let mut obj = serde_json::Map::new();
-            for (i, col) in column_names.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i)?;
-                let json_val = sqlite_to_json(val);
-                obj.insert(col.clone(), json_val);
-            }
-            Ok(Value::Object(obj))
-        })
+        .query_map([], |row| row_to_json(row, &column_names))
         .map_err(|e| LodgeError::Sql(e.to_string()))?;
+
+    let bool_field_names: HashSet<String> = collections
+        .iter()
+        .flat_map(|c| c.fields.iter())
+        .filter(|f| f.field_type == FieldType::Bool)
+        .map(|f| f.name.clone())
+        .collect();
 
     let mut results = Vec::new();
     for row in rows {
-        results.push(row.map_err(|e| LodgeError::Sql(e.to_string()))?);
+        let mut record = row.map_err(|e| LodgeError::Sql(e.to_string()))?;
+        if !bool_field_names.is_empty() {
+            if let Value::Object(ref mut map) = record {
+                for field_name in &bool_field_names {
+                    if let Some(val) = map.get_mut(field_name) {
+                        match val {
+                            Value::Number(n) if n.as_i64() == Some(0) => *val = Value::Bool(false),
+                            Value::Number(n) if n.as_i64() == Some(1) => *val = Value::Bool(true),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        results.push(record);
     }
     Ok(results)
 }
@@ -215,21 +222,13 @@ fn get_record_by_id(conn: &Connection, collection: &Collection, id: i64) -> Resu
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let mut record = stmt
-        .query_row([id], |row| {
-            let mut obj = serde_json::Map::new();
-            for (i, col) in column_names.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i)?;
-                let json_val = sqlite_to_json(val);
-                obj.insert(col.clone(), json_val);
-            }
-            Ok(Value::Object(obj))
-        })
+        .query_row([id], |row| row_to_json(row, &column_names))
         .map_err(|_| LodgeError::RecordNotFound(id))?;
     fix_bool_fields(&mut record, collection);
     Ok(record)
 }
 
-fn sqlite_to_json(val: rusqlite::types::Value) -> Value {
+pub fn sqlite_to_json(val: rusqlite::types::Value) -> Value {
     match val {
         rusqlite::types::Value::Null => Value::Null,
         rusqlite::types::Value::Integer(i) => json!(i),
@@ -237,4 +236,14 @@ fn sqlite_to_json(val: rusqlite::types::Value) -> Value {
         rusqlite::types::Value::Text(s) => json!(s),
         rusqlite::types::Value::Blob(b) => json!(format!("<blob {} bytes>", b.len())),
     }
+}
+
+/// Convert a SQLite row into a JSON object given column names.
+pub fn row_to_json(row: &rusqlite::Row, column_names: &[String]) -> rusqlite::Result<Value> {
+    let mut obj = serde_json::Map::new();
+    for (i, col) in column_names.iter().enumerate() {
+        let val: rusqlite::types::Value = row.get(i)?;
+        obj.insert(col.clone(), sqlite_to_json(val));
+    }
+    Ok(Value::Object(obj))
 }

@@ -43,7 +43,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
         )
         .subcommand(
             Command::new("alter")
-                .about("Add fields to an existing collection")
+                .about("Alter an existing collection: add, rename, or drop fields")
                 .arg(
                     Arg::new("name")
                         .required(true)
@@ -52,8 +52,23 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 .arg(
                     Arg::new("add-fields")
                         .long("add-fields")
-                        .required(true)
                         .help("New field definitions to add (e.g. \"status:text, due:date\")"),
+                )
+                .arg(
+                    Arg::new("rename-field")
+                        .long("rename-field")
+                        .help("Rename a field (e.g. \"old_name:new_name\")"),
+                )
+                .arg(
+                    Arg::new("drop-fields")
+                        .long("drop-fields")
+                        .help("Drop fields (comma-separated, e.g. \"field1,field2\")"),
+                )
+                .group(
+                    clap::ArgGroup::new("alter_action")
+                        .args(["add-fields", "rename-field", "drop-fields"])
+                        .required(true)
+                        .multiple(true),
                 ),
         )
         .subcommand(
@@ -218,6 +233,16 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                     Arg::new("path")
                         .required(true)
                         .help("Path to the snapshot JSON file"),
+                ),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List all collections and their schemas")
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
                 ),
         )
         .subcommand(
@@ -413,8 +438,16 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
         );
 
         // schema subcommand
-        coll_cmd = coll_cmd
-            .subcommand(Command::new("schema").about("Show field definitions for this collection"));
+        coll_cmd = coll_cmd.subcommand(
+            Command::new("schema")
+                .about("Show field definitions for this collection")
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
+        );
 
         cmd = cmd.subcommand(coll_cmd);
     }

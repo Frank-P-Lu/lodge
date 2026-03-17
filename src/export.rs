@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::output::{self, Format};
 use crate::record;
-use crate::schema::{self, Collection};
+use crate::schema;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
@@ -180,12 +180,51 @@ fn import_json_array(conn: &Connection, coll: &Collection, records: &[Value]) ->
     Ok(count)
 }
 
+fn parse_csv_row(input: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if in_quotes {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    // Escaped quote ("") -> literal "
+                    chars.next();
+                    current.push('"');
+                } else {
+                    // End of quoted field
+                    in_quotes = false;
+                }
+            } else {
+                current.push(ch);
+            }
+        } else {
+            match ch {
+                ',' => {
+                    fields.push(current.trim().to_string());
+                    current = String::new();
+                }
+                '"' => {
+                    in_quotes = true;
+                }
+                _ => {
+                    current.push(ch);
+                }
+            }
+        }
+    }
+    fields.push(current.trim().to_string());
+    fields
+}
+
 fn import_csv_records(conn: &Connection, coll: &Collection, data: &str) -> Result<usize> {
     let mut lines = data.lines();
     let header_line = lines
         .next()
         .ok_or_else(|| crate::error::LodgeError::ImportError("CSV file is empty".to_string()))?;
-    let headers: Vec<&str> = header_line.split(',').map(|s| s.trim()).collect();
+    let headers = parse_csv_row(header_line);
 
     let mut count = 0;
     for line in lines {
@@ -193,15 +232,15 @@ fn import_csv_records(conn: &Connection, coll: &Collection, data: &str) -> Resul
         if line.is_empty() {
             continue;
         }
-        let values_raw: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+        let values_raw = parse_csv_row(line);
         let mut values = Vec::new();
         for (i, header) in headers.iter().enumerate() {
             // Skip auto-managed columns
-            if matches!(*header, "id" | "created_at" | "updated_at") {
+            if matches!(header.as_str(), "id" | "created_at" | "updated_at") {
                 continue;
             }
             if let Some(val) = values_raw.get(i) {
-                if !val.is_empty() && *val != "null" {
+                if !val.is_empty() {
                     values.push((header.to_string(), val.to_string()));
                 }
             }
