@@ -108,8 +108,15 @@ pub fn streak(conn: &Connection, collection: &Collection, date_field: &str) -> R
     let len = streak_end.signed_duration_since(streak_start).num_days() + 1;
     streaks.push((streak_start, streak_end, len));
 
-    let longest = streaks.iter().max_by_key(|s| s.2).unwrap();
-    let current = streaks.last().unwrap();
+    // Safe: streaks always has at least one entry (pushed after the loop above),
+    // but we use ok_or for robustness.
+    let longest = streaks
+        .iter()
+        .max_by_key(|s| s.2)
+        .ok_or_else(|| LodgeError::Sql("no streaks computed".to_string()))?;
+    let current = streaks
+        .last()
+        .ok_or_else(|| LodgeError::Sql("no streaks computed".to_string()))?;
 
     Ok(json!({
         "current_streak": current.2,

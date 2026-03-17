@@ -190,11 +190,11 @@ fn handle_alter(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
 
 fn handle_sql(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     let conn = db::open(cwd)?;
-    let collections_now = schema::load_collections(&conn).unwrap_or_default();
+    let collections_now = schema::load_collections(&conn)?;
     let query = get_arg(sub_m, "query")?;
     let format = get_format(sub_m);
     let results = record::execute_sql(&conn, query, &collections_now)?;
-    println!("{}", output::format_output(&results, &format));
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
@@ -216,7 +216,7 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         Some(("list", list_m)) => {
             let format = get_format(list_m);
             let views = view::list_views(&conn)?;
-            println!("{}", output::format_output(&views, &format));
+            println!("{}", output::format_output(&views, &format)?);
             Ok(())
         }
         Some(("show", show_m)) => {
@@ -316,7 +316,7 @@ fn handle_list(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
             serde_json::json!({"name": c.name, "fields": fields})
         })
         .collect();
-    println!("{}", output::format_output(&result, &format));
+    println!("{}", output::format_output(&result, &format)?);
     Ok(())
 }
 
@@ -338,7 +338,7 @@ fn run_view_inner(conn: &Connection, run_m: &ArgMatches) -> error::Result<()> {
         });
         println!("{wrapped}");
     } else {
-        println!("{}", output::format_output(&records, &format));
+        println!("{}", output::format_output(&records, &format)?);
     }
     Ok(())
 }
@@ -382,7 +382,7 @@ fn handle_collection_add(
     let format = get_format(add_m);
     let result = record::add_record(conn, coll, &values)?;
     println!("Added record {} to '{}'", result["id"], collection_name);
-    println!("{}", output::format_single(&result, &format));
+    println!("{}", output::format_single(&result, &format)?);
     Ok(())
 }
 
@@ -398,7 +398,7 @@ fn handle_collection_query(
         .and_then(|s| s.parse::<i64>().ok());
     let format = get_format(query_m);
     let results = record::query_records(conn, coll, where_clause, sort, limit)?;
-    println!("{}", output::format_output(&results, &format));
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
@@ -423,7 +423,7 @@ fn handle_collection_update(
     let format = get_format(update_m);
     let result = record::update_record(conn, coll, id, &values)?;
     println!("Updated record {id} in '{collection_name}'");
-    println!("{}", output::format_single(&result, &format));
+    println!("{}", output::format_single(&result, &format)?);
     Ok(())
 }
 
@@ -437,7 +437,7 @@ fn handle_collection_delete(
     let format = get_format(delete_m);
     let result = record::delete_record(conn, coll, id)?;
     println!("Deleted record {id} from '{collection_name}'");
-    println!("{}", output::format_single(&result, &format));
+    println!("{}", output::format_single(&result, &format)?);
     Ok(())
 }
 
@@ -452,7 +452,7 @@ fn handle_collection_search(
         .and_then(|s| s.parse::<i64>().ok());
     let format = get_format(search_m);
     let results = fts::search_records(conn, coll, query, limit)?;
-    println!("{}", output::format_output(&results, &format));
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
@@ -464,7 +464,7 @@ fn handle_collection_streak(
     let field = get_arg(streak_m, "field")?;
     let format = get_format(streak_m);
     let result = timeseries::streak(conn, coll, field)?;
-    println!("{}", output::format_single(&result, &format));
+    println!("{}", output::format_single(&result, &format)?);
     Ok(())
 }
 
@@ -482,7 +482,7 @@ fn handle_collection_gaps(
     })?;
     let format = get_format(gaps_m);
     let results = timeseries::gaps(conn, coll, field, threshold)?;
-    println!("{}", output::format_output(&results, &format));
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
@@ -501,7 +501,7 @@ fn handle_collection_rolling_avg(
     })?;
     let format = get_format(avg_m);
     let results = timeseries::rolling_average(conn, coll, field, over, window)?;
-    println!("{}", output::format_output(&results, &format));
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
@@ -523,9 +523,11 @@ fn handle_collection_schema(coll: &Collection, sub_m: &ArgMatches) -> error::Res
                 "collection": coll.name,
                 "fields": fields,
             });
-            println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            let json = serde_json::to_string_pretty(&out)
+                .map_err(|e| LodgeError::Sql(format!("JSON serialization failed: {e}")))?;
+            println!("{json}");
         }
-        _ => println!("{}", output::format_output(&fields, &format)),
+        _ => println!("{}", output::format_output(&fields, &format)?),
     }
     Ok(())
 }

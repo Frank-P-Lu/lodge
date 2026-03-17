@@ -4,11 +4,7 @@ use clap::{Arg, Command};
 /// Build the top-level CLI command with dynamic subcommands for each collection.
 pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
     let view_about: &'static str = if view_names.is_empty() {
-        Box::leak(
-            "Create, list, run, or delete saved views"
-                .to_string()
-                .into_boxed_str(),
-        )
+        "Create, list, run, or delete saved views"
     } else {
         Box::leak(
             format!(
