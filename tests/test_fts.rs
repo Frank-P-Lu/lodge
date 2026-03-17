@@ -1,5 +1,6 @@
 mod common;
 
+#[allow(unused_imports)]
 use predicates::prelude::*;
 
 fn setup_with_fts_notes() -> tempfile::TempDir {
@@ -306,4 +307,112 @@ fn fts_stays_in_sync_after_delete() {
     assert!(out.status.success());
     let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert!(results.is_empty());
+}
+
+#[test]
+fn search_empty_query_returns_empty_array() {
+    let dir = setup_with_fts_notes();
+    common::lodge_cmd(&dir)
+        .args(["notes", "add", "--title", "Hello", "--body", "World"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["notes", "search", ""])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn search_short_query_returns_empty_array() {
+    let dir = setup_with_fts_notes();
+    common::lodge_cmd(&dir)
+        .args(["notes", "add", "--title", "Hello", "--body", "World"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["notes", "search", "ab"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn search_with_single_quotes_succeeds() {
+    let dir = setup_with_fts_notes();
+    common::lodge_cmd(&dir)
+        .args([
+            "notes",
+            "add",
+            "--title",
+            "alert('xss')",
+            "--body",
+            "security test",
+        ])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["notes", "search", "alert('xss')"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["title"], "alert('xss')");
+}
+
+#[test]
+fn search_with_double_quotes_succeeds() {
+    let dir = setup_with_fts_notes();
+    common::lodge_cmd(&dir)
+        .args([
+            "notes",
+            "add",
+            "--title",
+            "He said \"hello\" today",
+            "--body",
+            "conversation",
+        ])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["notes", "search", "said \"hello\""])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn search_cjk_text() {
+    let dir = setup_with_fts_notes();
+    common::lodge_cmd(&dir)
+        .args([
+            "notes",
+            "add",
+            "--title",
+            "日本語のテスト",
+            "--body",
+            "Japanese text test",
+        ])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["notes", "search", "日本語"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["title"], "日本語のテスト");
 }

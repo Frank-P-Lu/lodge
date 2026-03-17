@@ -174,6 +174,66 @@ fn restore_invalid_json_errors() {
 }
 
 #[test]
+fn snapshot_restore_preserves_nulls() {
+    let dir = common::setup();
+    // Create collection with optional fields
+    common::lodge_cmd(&dir)
+        .args(["create", "items", "--fields", "name:text, note:text, count:int"])
+        .assert()
+        .success();
+
+    // Add a record with only name (note and count are null)
+    common::lodge_cmd(&dir)
+        .args(["items", "add", "--name", "Alpha"])
+        .assert()
+        .success();
+
+    // Snapshot
+    let snap_path = dir.path().join("snap.json");
+    common::lodge_cmd(&dir)
+        .args(["snapshot", "--output", snap_path.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Nuke records
+    common::lodge_cmd(&dir)
+        .args(["sql", "DELETE FROM items"])
+        .assert()
+        .success();
+
+    // Restore
+    common::lodge_cmd(&dir)
+        .args(["restore", snap_path.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Verify nulls are preserved (not empty strings)
+    let out = common::lodge_cmd(&dir)
+        .args(["items", "query"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["name"], "Alpha");
+    assert!(arr[0]["note"].is_null(), "note should be null, got: {}", arr[0]["note"]);
+    assert!(arr[0]["count"].is_null(), "count should be null, got: {}", arr[0]["count"]);
+
+    // Also verify CSV output shows empty (not literal quotes or "")
+    let out = common::lodge_cmd(&dir)
+        .args(["items", "query", "--format", "csv"])
+        .output()
+        .unwrap();
+    let csv_out = String::from_utf8(out.stdout).unwrap();
+    // The null fields should be empty in CSV, not the string "null" or ""
+    let lines: Vec<&str> = csv_out.trim().lines().collect();
+    assert_eq!(lines.len(), 2); // header + 1 row
+    let data_line = lines[1];
+    // Should contain Alpha and empty fields for note and count
+    assert!(data_line.contains("Alpha"), "CSV should contain Alpha");
+}
+
+#[test]
 fn snapshot_empty_db_succeeds() {
     let dir = common::setup();
     let snap_path = dir.path().join("empty.json");

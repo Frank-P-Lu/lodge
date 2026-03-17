@@ -92,6 +92,13 @@ impl FieldType {
                 if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
                     return Ok(dt.format("%Y-%m-%dT%H:%M:%S").to_string());
                 }
+                // Try timezone-aware formats (convert to UTC)
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+                    return Ok(dt.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string());
+                }
+                if let Ok(dt) = chrono::DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%z") {
+                    return Ok(dt.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string());
+                }
                 Err(LodgeError::InvalidValue {
                     field: field_name.to_string(),
                     field_type: "datetime".to_string(),

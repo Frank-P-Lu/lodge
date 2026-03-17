@@ -191,8 +191,10 @@ pub fn restore_snapshot(conn: &Connection, path: &str) -> Result<()> {
             for field in fields {
                 let fname = field["name"].as_str().unwrap();
                 if let Some(val) = obj.get(fname) {
-                    ins_names.push(fname.to_string());
-                    ins_values.push(json_value_to_sql_string(val));
+                    if !val.is_null() {
+                        ins_names.push(fname.to_string());
+                        ins_values.push(json_value_to_sql_string(val));
+                    }
                 }
             }
             // Include auto-managed columns

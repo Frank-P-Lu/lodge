@@ -70,11 +70,22 @@ fn view_create_duplicate_errors() {
 #[test]
 fn view_create_nonexistent_collection_errors() {
     let dir = common::setup();
-    common::lodge_cmd(&dir)
+    let output = common::lodge_cmd(&dir)
         .args(["view", "create", "v1", "--collection", "nope"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("not found"));
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not found"));
+    // Should be exactly one error line, not two
+    let error_lines: Vec<&str> = stderr.trim().lines().collect();
+    assert_eq!(
+        error_lines.len(),
+        1,
+        "Expected 1 error line, got {}: {:?}",
+        error_lines.len(),
+        error_lines
+    );
 }
 
 #[test]

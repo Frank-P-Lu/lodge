@@ -321,6 +321,18 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             let help: &'static str =
                 Box::leak(format!("({}) new value", field.field_type.as_str()).into_boxed_str());
             update_cmd = update_cmd.arg(Arg::new(fname).long(fname).help(help).allow_hyphen_values(true));
+
+            let clear_name: &'static str =
+                Box::leak(format!("clear-{}", field.name).into_boxed_str());
+            let clear_help: &'static str =
+                Box::leak(format!("Set {} to null", field.name).into_boxed_str());
+            update_cmd = update_cmd.arg(
+                Arg::new(clear_name)
+                    .long(clear_name)
+                    .help(clear_help)
+                    .action(clap::ArgAction::SetTrue)
+                    .conflicts_with(fname),
+            );
         }
         update_cmd = update_cmd.arg(
             Arg::new("format")

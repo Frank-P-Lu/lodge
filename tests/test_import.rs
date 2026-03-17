@@ -245,6 +245,56 @@ fn test_import_all_with_file_flag() {
 }
 
 #[test]
+fn import_csv_quoted_fields() {
+    let dir = setup_with_collection();
+    let csv_data = "\"title\",\"priority\"\n\"Task A\",\"1\"\n\"Task B\",\"2\"\n";
+    let file_path = dir.path().join("quoted.csv");
+    std::fs::write(&file_path, csv_data).unwrap();
+
+    common::lodge_cmd(&dir)
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Imported 2 records"));
+
+    // Verify no quote marks in stored values
+    let output = common::lodge_cmd(&dir)
+        .args(["tasks", "query"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["title"], "Task A");
+    assert_eq!(arr[1]["title"], "Task B");
+    // Ensure no residual quote marks
+    let title = arr[0]["title"].as_str().unwrap();
+    assert!(!title.contains('"'), "title should not contain quotes: {title}");
+}
+
+#[test]
+fn import_csv_fields_with_commas() {
+    let dir = setup_with_collection();
+    let csv_data = "title,priority\n\"Task A, part 2\",1\n";
+    let file_path = dir.path().join("commas.csv");
+    std::fs::write(&file_path, csv_data).unwrap();
+
+    common::lodge_cmd(&dir)
+        .args(["import", "tasks", "--file", file_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Imported 1 records"));
+
+    let output = common::lodge_cmd(&dir)
+        .args(["tasks", "query"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr[0]["title"], "Task A, part 2");
+}
+
+#[test]
 fn test_import_no_args_error() {
     let dir = common::setup();
     common::lodge_cmd(&dir).args(["import"]).assert().failure();

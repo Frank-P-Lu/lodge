@@ -106,6 +106,7 @@ pub fn update_record(
     collection: &Collection,
     id: i64,
     values: &[(String, String)],
+    clear_fields: &[String],
 ) -> Result<Value> {
     // Check record exists
     let exists: bool = conn.query_row(
@@ -139,6 +140,21 @@ pub fn update_record(
         let validated = field.field_type.validate(val, key)?;
         set_clauses.push(format!("{} = ?{}", key, params.len() + 1));
         params.push(validated);
+    }
+
+    for field_name in clear_fields {
+        // Validate that the field exists
+        collection
+            .fields
+            .iter()
+            .find(|f| f.name == *field_name)
+            .ok_or_else(|| {
+                LodgeError::InvalidFieldsFormat(format!(
+                    "unknown field '{field_name}' in collection '{}'",
+                    collection.name
+                ))
+            })?;
+        set_clauses.push(format!("{field_name} = NULL"));
     }
 
     set_clauses.push(format!("updated_at = ?{}", params.len() + 1));

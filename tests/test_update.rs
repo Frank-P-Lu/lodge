@@ -67,3 +67,35 @@ fn test_update_no_fields_error() {
         .stderr(predicate::str::contains("no fields"))
         .stderr(predicate::str::contains("Invalid fields format").not());
 }
+
+#[test]
+fn clear_field_sets_null() {
+    let dir = setup_with_task();
+    let output = common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1", "--clear-title"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json = common::parse_json_from_output(&output.stdout);
+    assert!(json["title"].is_null());
+    assert_eq!(json["priority"], 1); // unchanged
+}
+
+#[test]
+fn clear_field_and_set_same_field_conflicts() {
+    let dir = setup_with_task();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1", "--clear-title", "--title", "New"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn clear_field_alone_succeeds() {
+    let dir = setup_with_task();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1", "--clear-priority"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated record 1 in 'tasks'"));
+}

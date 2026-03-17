@@ -113,3 +113,76 @@ fn test_add_shows_confirmation() {
         .success()
         .stdout(predicate::str::contains("Added record 1 to 'tasks'"));
 }
+
+fn setup_with_events() -> tempfile::TempDir {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args([
+            "create",
+            "events",
+            "--fields",
+            "name:text, happened_at:datetime",
+        ])
+        .assert()
+        .success();
+    dir
+}
+
+#[test]
+fn add_datetime_with_z_suffix() {
+    let dir = setup_with_events();
+    let out = common::lodge_cmd(&dir)
+        .args([
+            "events",
+            "add",
+            "--name",
+            "utc event",
+            "--happened_at",
+            "2026-03-18T08:30:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    assert_eq!(json["happened_at"], "2026-03-18T08:30:00");
+}
+
+#[test]
+fn add_datetime_with_positive_offset() {
+    let dir = setup_with_events();
+    let out = common::lodge_cmd(&dir)
+        .args([
+            "events",
+            "add",
+            "--name",
+            "tokyo event",
+            "--happened_at",
+            "2026-03-18T17:30:00+09:00",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    // 17:30 +09:00 = 08:30 UTC
+    assert_eq!(json["happened_at"], "2026-03-18T08:30:00");
+}
+
+#[test]
+fn add_datetime_with_negative_offset() {
+    let dir = setup_with_events();
+    let out = common::lodge_cmd(&dir)
+        .args([
+            "events",
+            "add",
+            "--name",
+            "nyc event",
+            "--happened_at",
+            "2026-03-18T03:30:00-05:00",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    // 03:30 -05:00 = 08:30 UTC
+    assert_eq!(json["happened_at"], "2026-03-18T08:30:00");
+}

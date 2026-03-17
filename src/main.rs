@@ -222,7 +222,7 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         Some(("show", show_m)) => {
             let name = get_arg(show_m, "name")?;
             let v = view::show_view(&conn, name)?;
-            println!("{v}");
+            println!("{}", serde_json::to_string_pretty(&v).map_err(|e| LodgeError::Sql(e.to_string()))?);
             Ok(())
         }
         Some(("update", update_m)) => {
@@ -410,18 +410,22 @@ fn handle_collection_update(
 ) -> error::Result<()> {
     let id = get_id(update_m)?;
     let mut values = Vec::new();
+    let mut clear_fields = Vec::new();
     for field in &coll.fields {
-        if let Some(val) = update_m.get_one::<String>(&field.name) {
+        let clear_name = format!("clear-{}", field.name);
+        if update_m.get_flag(&clear_name) {
+            clear_fields.push(field.name.clone());
+        } else if let Some(val) = update_m.get_one::<String>(&field.name) {
             values.push((field.name.clone(), val.clone()));
         }
     }
-    if values.is_empty() {
+    if values.is_empty() && clear_fields.is_empty() {
         return Err(LodgeError::MissingArgument(
             "no fields to update".to_string(),
         ));
     }
     let format = get_format(update_m);
-    let result = record::update_record(conn, coll, id, &values)?;
+    let result = record::update_record(conn, coll, id, &values, &clear_fields)?;
     println!("Updated record {id} in '{collection_name}'");
     println!("{}", output::format_single(&result, &format)?);
     Ok(())

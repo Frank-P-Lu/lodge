@@ -9,7 +9,7 @@ pub fn create_fts_table(conn: &Connection, collection: &str, text_fields: &[Stri
 
     // Create FTS5 virtual table
     let fts_sql = format!(
-        "CREATE VIRTUAL TABLE \"{collection}_fts\" USING fts5({fields_csv}, content=\"{collection}\", content_rowid=\"id\")"
+        "CREATE VIRTUAL TABLE \"{collection}_fts\" USING fts5({fields_csv}, content=\"{collection}\", content_rowid=\"id\", tokenize='trigram')"
     );
     conn.execute_batch(&fts_sql)
         .map_err(|e| LodgeError::Fts(format!("failed to create FTS table: {e}")))?;
@@ -73,6 +73,14 @@ pub fn search_records(
         return Err(LodgeError::FtsNotEnabled(name.to_string()));
     }
 
+    // Trigram tokenizer requires at least 3 characters
+    if query.trim().len() < 3 {
+        return Ok(Vec::new());
+    }
+
+    // Escape for FTS5 literal matching: wrap in double quotes, double any internal quotes
+    let escaped = format!("\"{}\"", query.replace('"', "\"\""));
+
     let mut sql = format!(
         "SELECT t.* FROM \"{name}\" t JOIN \"{name}_fts\" fts ON t.id = fts.rowid WHERE \"{name}_fts\" MATCH ?1 ORDER BY fts.rank"
     );
@@ -86,7 +94,7 @@ pub fn search_records(
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
-        .query_map([query], |row| row_to_json(row, &column_names))
+        .query_map([&escaped], |row| row_to_json(row, &column_names))
         .map_err(|e| LodgeError::Fts(format!("search query failed: {e}")))?;
 
     let mut results = Vec::new();
