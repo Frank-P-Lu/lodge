@@ -108,6 +108,31 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                     ),
                 )
                 .subcommand(
+                    Command::new("show")
+                        .about("Show a single view's definition")
+                        .arg(
+                            Arg::new("name")
+                                .required(true)
+                                .help("Name of the view to show"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about("Update a saved view's filter, sort, or limit")
+                        .arg(
+                            Arg::new("name")
+                                .required(true)
+                                .help("Name of the view to update"),
+                        )
+                        .arg(Arg::new("where").long("where").help("New SQL WHERE clause"))
+                        .arg(Arg::new("sort").long("sort").help("New ORDER BY clause"))
+                        .arg(
+                            Arg::new("limit")
+                                .long("limit")
+                                .help("New maximum number of records"),
+                        ),
+                )
+                .subcommand(
                     Command::new("run")
                         .about("Run a saved view")
                         .arg(
@@ -120,6 +145,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                                 .long("format")
                                 .default_value("json")
                                 .help("Output format: json, table, csv"),
+                        )
+                        .arg(
+                            Arg::new("meta")
+                                .long("meta")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("Wrap output with view and collection context"),
                         ),
                 )
                 .subcommand(
@@ -328,6 +359,10 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .help("Output format: json, table, csv"),
                 ),
         );
+
+        // schema subcommand
+        coll_cmd = coll_cmd
+            .subcommand(Command::new("schema").about("Show field definitions for this collection"));
 
         cmd = cmd.subcommand(coll_cmd);
     }

@@ -244,3 +244,124 @@ fn view_appears_in_help() {
         .success()
         .stdout(predicate::str::contains("urgent"));
 }
+
+#[test]
+fn view_show_returns_definition() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "open_tasks",
+            "--collection",
+            "tasks",
+            "--where",
+            "status = 'open'",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "show", "open_tasks"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["name"], "open_tasks");
+    assert_eq!(json["collection"], "tasks");
+    assert_eq!(json["where"], "status = 'open'");
+}
+
+#[test]
+fn view_show_nonexistent_errors() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["view", "show", "nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn view_update_changes_filter() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["view", "create", "open_tasks", "--collection", "tasks"])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "update",
+            "open_tasks",
+            "--where",
+            "status = 'closed'",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated view 'open_tasks'"));
+
+    // Verify the filter changed
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "run", "open_tasks"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["status"], "closed");
+}
+
+#[test]
+fn view_update_nonexistent_errors() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["view", "update", "nope", "--where", "x=1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn view_update_no_fields_errors() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["view", "create", "v1", "--collection", "tasks"])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args(["view", "update", "v1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("specify at least one"));
+}
+
+#[test]
+fn view_run_meta_flag() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "open_tasks",
+            "--collection",
+            "tasks",
+            "--where",
+            "status = 'open'",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "run", "open_tasks", "--meta"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["view"], "open_tasks");
+    assert_eq!(json["collection"], "tasks");
+    let records = json["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+}

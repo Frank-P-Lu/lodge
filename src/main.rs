@@ -167,12 +167,43 @@ fn run() -> error::Result<()> {
                     println!("{}", output::format_output(&views, &format));
                     Ok(())
                 }
+                Some(("show", show_m)) => {
+                    let name = show_m.get_one::<String>("name").unwrap();
+                    let v = view::show_view(&conn, name)?;
+                    println!("{v}");
+                    Ok(())
+                }
+                Some(("update", update_m)) => {
+                    let name = update_m.get_one::<String>("name").unwrap();
+                    let where_clause = update_m.get_one::<String>("where").map(|s| s.as_str());
+                    let sort = update_m.get_one::<String>("sort").map(|s| s.as_str());
+                    let limit = update_m
+                        .get_one::<String>("limit")
+                        .and_then(|s| s.parse::<i64>().ok());
+                    if where_clause.is_none() && sort.is_none() && limit.is_none() {
+                        return Err(LodgeError::InvalidFieldsFormat(
+                            "specify at least one of --where, --sort, --limit".to_string(),
+                        ));
+                    }
+                    view::update_view(&conn, name, where_clause, sort, limit)?;
+                    println!("Updated view '{name}'");
+                    Ok(())
+                }
                 Some(("run", run_m)) => {
                     let name = run_m.get_one::<String>("name").unwrap();
                     let format_str = run_m.get_one::<String>("format").unwrap();
                     let format = Format::from_str(format_str).unwrap_or(Format::Json);
-                    let result = view::run_view(&conn, name, &format)?;
-                    println!("{result}");
+                    let (collection_name, records) = view::run_view(&conn, name)?;
+                    if run_m.get_flag("meta") {
+                        let wrapped = serde_json::json!({
+                            "view": name,
+                            "collection": collection_name,
+                            "records": records,
+                        });
+                        println!("{wrapped}");
+                    } else {
+                        println!("{}", output::format_output(&records, &format));
+                    }
                     Ok(())
                 }
                 Some(("delete", delete_m)) => {
@@ -355,6 +386,19 @@ fn run() -> error::Result<()> {
                     let format = Format::from_str(format_str).unwrap_or(Format::Json);
                     let results = timeseries::rolling_average(&conn, &coll, field, over, window)?;
                     println!("{}", output::format_output(&results, &format));
+                    Ok(())
+                }
+                Some(("schema", _)) => {
+                    let fields: Vec<serde_json::Value> = coll
+                        .fields
+                        .iter()
+                        .map(|f| serde_json::json!({"name": f.name, "type": f.field_type.as_str()}))
+                        .collect();
+                    let out = serde_json::json!({
+                        "collection": coll.name,
+                        "fields": fields,
+                    });
+                    println!("{out}");
                     Ok(())
                 }
                 _ => unreachable!(),
