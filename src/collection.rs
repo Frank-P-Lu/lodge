@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 const RESERVED_NAMES: &[&str] = &[
     "init", "create", "alter", "sql", "help", "view", "export", "import", "snapshot", "restore",
-    "run", "list",
+    "run", "list", "log",
 ];
 
 /// Check whether a collection exists in the database.

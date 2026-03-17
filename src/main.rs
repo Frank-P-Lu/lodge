@@ -5,6 +5,7 @@ mod error;
 mod export;
 mod fts;
 mod import;
+mod log;
 mod output;
 mod record;
 mod schema;
@@ -80,6 +81,7 @@ fn run() -> error::Result<()> {
         Some(("snapshot", sub_m)) => handle_snapshot(&cwd, sub_m),
         Some(("restore", sub_m)) => handle_restore(&cwd, sub_m),
         Some(("import", sub_m)) => handle_import(&cwd, sub_m),
+        Some(("log", sub_m)) => handle_log(&cwd, sub_m),
         Some(("list", sub_m)) => handle_list(&cwd, sub_m),
         Some(("run", sub_m)) => handle_run_view(&cwd, sub_m),
         Some((collection_name, sub_m)) => handle_collection(&cwd, collection_name, sub_m),
@@ -298,6 +300,19 @@ fn handle_import(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         let count = import::import_collection(&conn, name, &data)?;
         println!("Imported {count} records into '{name}'");
     }
+    Ok(())
+}
+
+fn handle_log(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+    let conn = db::open(cwd)?;
+    let collection = sub_m.get_one::<String>("collection").map(|s| s.as_str());
+    let limit: i64 = sub_m
+        .get_one::<String>("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20);
+    let format = get_format(sub_m);
+    let results = log::query_log(&conn, collection, limit)?;
+    println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 

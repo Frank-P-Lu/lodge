@@ -180,7 +180,6 @@ fn rolling_average_computes_correctly() {
 }
 
 #[test]
-#[test]
 fn test_streak_reports_skipped_nulls() {
     let dir = setup_with_gym();
     // Add records with dates

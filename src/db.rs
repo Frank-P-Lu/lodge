@@ -31,6 +31,7 @@ pub fn init(dir: &Path) -> Result<()> {
     create_meta_table(&conn)?;
     create_views_table(&conn)?;
     create_fts_meta_table(&conn)?;
+    create_log_table(&conn)?;
     Ok(())
 }
 
@@ -48,6 +49,8 @@ pub fn open(start: &Path) -> Result<Connection> {
     create_views_table(&conn)?;
     // Migrate: ensure _lodge_fts_meta exists for older databases
     create_fts_meta_table(&conn)?;
+    // Migrate: ensure _lodge_log exists for older databases
+    create_log_table(&conn)?;
     Ok(conn)
 }
 
@@ -70,6 +73,23 @@ fn create_fts_meta_table(conn: &Connection) -> Result<()> {
             collection TEXT NOT NULL,
             field_name TEXT NOT NULL,
             PRIMARY KEY (collection, field_name)
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_log_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _lodge_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            collection TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            record_id INTEGER,
+            success INTEGER NOT NULL DEFAULT 1,
+            error TEXT,
+            before_data TEXT,
+            after_data TEXT
         );",
     )?;
     Ok(())

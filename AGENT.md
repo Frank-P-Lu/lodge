@@ -26,14 +26,16 @@ Single-binary Rust CLI. No server, no HTTP. The agent creates collections via th
 - `src/schema.rs` — load collection metadata from `_lodge_meta` table
 - `src/types.rs` — `FieldType` enum, field parsing, validation
 - `src/output.rs` — JSON/table/CSV formatting (`--format` flag)
+- `src/log.rs` — mutation log queries (`_lodge_log` table)
 - `src/error.rs` — `LodgeError` enum with `thiserror`
 
 ### Key design decisions
 
 - **`_lodge_meta` table** stores collection schemas (collection, field_name, field_type, field_order). This is the source of truth — the CLI is generated from it at runtime.
 - **Auto-managed columns**: every collection gets `id` (autoincrement PK), `created_at`, `updated_at`. Users cannot define fields with these names.
-- **Reserved names**: `init`, `create`, `alter`, `sql`, `help` cannot be used as collection names.
+- **Reserved names**: `init`, `create`, `alter`, `sql`, `help`, `log` cannot be used as collection names.
 - **Type system**: text, int, real, bool, date, datetime. Bool stores as INTEGER (0/1). Date/datetime store as TEXT in ISO format.
+- **`_lodge_log` table** records all mutations (add/update/delete) with before/after data, success/failure status, and error messages. Logging happens inside `record.rs` to guarantee coverage for all call sites.
 - **Field validation** happens at the type layer before insert — dates are parsed with chrono, ints/reals are parsed, bools normalize to 0/1.
 
 ### Data flow

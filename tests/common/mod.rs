@@ -15,6 +15,7 @@ pub fn setup() -> TempDir {
 }
 
 /// Parse JSON from stdout that may have a confirmation message line before the JSON.
+#[allow(dead_code)]
 pub fn parse_json_from_output(stdout: &[u8]) -> serde_json::Value {
     let text = std::str::from_utf8(stdout).unwrap();
     let start = text

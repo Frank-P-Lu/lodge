@@ -4,6 +4,46 @@ use crate::types::FieldType;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
+fn log_mutation(
+    conn: &Connection,
+    collection: &str,
+    operation: &str,
+    record_id: Option<i64>,
+    before: Option<&Value>,
+    after: Option<&Value>,
+) -> Result<()> {
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    conn.execute(
+        "INSERT INTO _lodge_log (timestamp, collection, operation, record_id, success, before_data, after_data)
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
+        rusqlite::params![
+            now,
+            collection,
+            operation,
+            record_id,
+            before.map(|v| v.to_string()),
+            after.map(|v| v.to_string()),
+        ],
+    )?;
+    Ok(())
+}
+
+fn log_failure(
+    conn: &Connection,
+    collection: &str,
+    operation: &str,
+    record_id: Option<i64>,
+    error: &str,
+) -> Result<()> {
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    conn.execute(
+        "INSERT INTO _lodge_log (timestamp, collection, operation, record_id, success, error)
+         VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+        rusqlite::params![now, collection, operation, record_id, error],
+    )?;
+    Ok(())
+}
+
 pub fn fix_bool_fields(record: &mut Value, collection: &Collection) {
     if let Value::Object(ref mut map) = record {
         for field in &collection.fields {
@@ -21,6 +61,20 @@ pub fn fix_bool_fields(record: &mut Value, collection: &Collection) {
 }
 
 pub fn add_record(
+    conn: &Connection,
+    collection: &Collection,
+    values: &[(String, String)],
+) -> Result<Value> {
+    match add_record_inner(conn, collection, values) {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            let _ = log_failure(conn, &collection.name, "add", None, &e.to_string());
+            Err(e)
+        }
+    }
+}
+
+fn add_record_inner(
     conn: &Connection,
     collection: &Collection,
     values: &[(String, String)],
@@ -62,7 +116,9 @@ pub fn add_record(
     let id = conn.last_insert_rowid();
 
     // Read back the inserted row
-    get_record_by_id(conn, collection, id)
+    let result = get_record_by_id(conn, collection, id)?;
+    log_mutation(conn, &collection.name, "add", Some(id), None, Some(&result))?;
+    Ok(result)
 }
 
 pub fn query_records(
@@ -108,18 +164,24 @@ pub fn update_record(
     values: &[(String, String)],
     clear_fields: &[String],
 ) -> Result<Value> {
-    // Check record exists
-    let exists: bool = conn.query_row(
-        &format!(
-            "SELECT COUNT(*) > 0 FROM \"{}\" WHERE id = ?1",
-            collection.name
-        ),
-        [id],
-        |row| row.get(0),
-    )?;
-    if !exists {
-        return Err(LodgeError::RecordNotFound(id));
+    match update_record_inner(conn, collection, id, values, clear_fields) {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            let _ = log_failure(conn, &collection.name, "update", Some(id), &e.to_string());
+            Err(e)
+        }
     }
+}
+
+fn update_record_inner(
+    conn: &Connection,
+    collection: &Collection,
+    id: i64,
+    values: &[(String, String)],
+    clear_fields: &[String],
+) -> Result<Value> {
+    // Get before state (also validates existence)
+    let before = get_record_by_id(conn, collection, id)?;
 
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
@@ -177,10 +239,22 @@ pub fn update_record(
 
     conn.execute(&sql, all_params.as_slice())?;
 
-    get_record_by_id(conn, collection, id)
+    let after = get_record_by_id(conn, collection, id)?;
+    log_mutation(conn, &collection.name, "update", Some(id), Some(&before), Some(&after))?;
+    Ok(after)
 }
 
 pub fn delete_record(conn: &Connection, collection: &Collection, id: i64) -> Result<Value> {
+    match delete_record_inner(conn, collection, id) {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            let _ = log_failure(conn, &collection.name, "delete", Some(id), &e.to_string());
+            Err(e)
+        }
+    }
+}
+
+fn delete_record_inner(conn: &Connection, collection: &Collection, id: i64) -> Result<Value> {
     let record = get_record_by_id(conn, collection, id)?;
 
     let sql = format!("DELETE FROM \"{}\" WHERE id = ?1", collection.name);
@@ -189,6 +263,7 @@ pub fn delete_record(conn: &Connection, collection: &Collection, id: i64) -> Res
         return Err(LodgeError::RecordNotFound(id));
     }
 
+    log_mutation(conn, &collection.name, "delete", Some(id), Some(&record), None)?;
     Ok(record)
 }
 

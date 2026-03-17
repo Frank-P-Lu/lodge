@@ -232,6 +232,26 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 ),
         )
         .subcommand(
+            Command::new("log")
+                .about("Show mutation log (adds, updates, deletes)")
+                .arg(
+                    Arg::new("collection")
+                        .help("Filter by collection name"),
+                )
+                .arg(
+                    Arg::new("limit")
+                        .long("limit")
+                        .default_value("20")
+                        .help("Maximum number of log entries (default: 20)"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
+        )
+        .subcommand(
             Command::new("list")
                 .about("List all collections and their schemas")
                 .arg(
