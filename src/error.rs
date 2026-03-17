@@ -42,6 +42,27 @@ pub enum LodgeError {
     #[error("Import error: {0}")]
     ImportError(String),
 
+    #[error("Snapshot error: {0}")]
+    Snapshot(String),
+
+    #[error("Invalid snapshot: {0}")]
+    InvalidSnapshot(String),
+
+    #[error("FTS not enabled on collection '{0}'. Use `lodge alter {0} --enable-fts \"field1,field2\"` to enable.")]
+    FtsNotEnabled(String),
+
+    #[error("FTS error: {0}")]
+    Fts(String),
+
+    #[error(
+        "Field '{field}' in collection '{collection}' has wrong type (expected {expected_type})"
+    )]
+    WrongFieldType {
+        field: String,
+        collection: String,
+        expected_type: String,
+    },
+
     #[error("SQL error: {0}")]
     Sql(String),
 

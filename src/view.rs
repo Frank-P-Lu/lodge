@@ -1,5 +1,4 @@
 use crate::error::{LodgeError, Result};
-use crate::output::Format;
 use crate::record;
 use crate::schema;
 use rusqlite::Connection;
@@ -87,7 +86,69 @@ pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
     Ok(results)
 }
 
-pub fn run_view(conn: &Connection, name: &str, format: &Format) -> Result<String> {
+pub fn show_view(conn: &Connection, name: &str) -> Result<Value> {
+    conn.query_row(
+        "SELECT name, collection, where_clause, sort, lim, created_at FROM _lodge_views WHERE name = ?1",
+        [name],
+        |row| {
+            let vname: String = row.get(0)?;
+            let collection: String = row.get(1)?;
+            let where_clause: Option<String> = row.get(2)?;
+            let sort: Option<String> = row.get(3)?;
+            let limit: Option<i64> = row.get(4)?;
+            let created_at: String = row.get(5)?;
+            Ok(json!({
+                "name": vname,
+                "collection": collection,
+                "where": where_clause,
+                "sort": sort,
+                "limit": limit,
+                "created_at": created_at,
+            }))
+        },
+    )
+    .map_err(|_| LodgeError::ViewNotFound(name.to_string()))
+}
+
+pub fn update_view(
+    conn: &Connection,
+    name: &str,
+    where_clause: Option<&str>,
+    sort: Option<&str>,
+    limit: Option<i64>,
+) -> Result<()> {
+    let mut sets = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(w) = where_clause {
+        sets.push(format!("where_clause = ?{}", params.len() + 1));
+        params.push(Box::new(w.to_string()));
+    }
+    if let Some(s) = sort {
+        sets.push(format!("sort = ?{}", params.len() + 1));
+        params.push(Box::new(s.to_string()));
+    }
+    if let Some(l) = limit {
+        sets.push(format!("lim = ?{}", params.len() + 1));
+        params.push(Box::new(l));
+    }
+
+    let sql = format!(
+        "UPDATE _lodge_views SET {} WHERE name = ?{}",
+        sets.join(", "),
+        params.len() + 1
+    );
+    params.push(Box::new(name.to_string()));
+
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let affected = conn.execute(&sql, params_refs.as_slice())?;
+    if affected == 0 {
+        return Err(LodgeError::ViewNotFound(name.to_string()));
+    }
+    Ok(())
+}
+
+pub fn run_view(conn: &Connection, name: &str) -> Result<(String, Vec<Value>)> {
     let view = load_view(conn, name)?;
     let coll = schema::load_collection(conn, &view.collection)?
         .ok_or_else(|| LodgeError::CollectionNotFound(view.collection.clone()))?;
@@ -100,7 +161,7 @@ pub fn run_view(conn: &Connection, name: &str, format: &Format) -> Result<String
         view.limit,
     )?;
 
-    Ok(crate::output::format_output(&results, format))
+    Ok((view.collection, results))
 }
 
 pub fn delete_view(conn: &Connection, name: &str) -> Result<()> {

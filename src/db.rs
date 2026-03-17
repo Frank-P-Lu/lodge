@@ -30,7 +30,13 @@ pub fn init(dir: &Path) -> Result<()> {
     let conn = Connection::open(&db_path)?;
     create_meta_table(&conn)?;
     create_views_table(&conn)?;
+    create_fts_meta_table(&conn)?;
     Ok(())
+}
+
+/// Get the lodge directory path, searching up from `start`.
+pub fn lodge_dir(start: &Path) -> Result<PathBuf> {
+    find_lodge_dir(start).ok_or(LodgeError::NotInitialized)
 }
 
 /// Open an existing lodge database, searching up from `start`.
@@ -40,6 +46,8 @@ pub fn open(start: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     // Migrate: ensure _lodge_views exists for older databases
     create_views_table(&conn)?;
+    // Migrate: ensure _lodge_fts_meta exists for older databases
+    create_fts_meta_table(&conn)?;
     Ok(conn)
 }
 
@@ -50,6 +58,17 @@ fn create_meta_table(conn: &Connection) -> Result<()> {
             field_name TEXT NOT NULL,
             field_type TEXT NOT NULL,
             field_order INTEGER NOT NULL,
+            PRIMARY KEY (collection, field_name)
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_fts_meta_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _lodge_fts_meta (
+            collection TEXT NOT NULL,
+            field_name TEXT NOT NULL,
             PRIMARY KEY (collection, field_name)
         );",
     )?;

@@ -36,7 +36,23 @@ Lodge replaces that with a real database (SQLite) behind a CLI the agent operate
 
 5. **Evolve it.** Add fields, create new collections. The CLI updates automatically:
    ```
-   lodge alter gym_sessions --add "muscle_group:text"
+   lodge alter gym_sessions --add-fields "muscle_group:text"
+   ```
+
+6. **Save views.** Bookmark queries the agent runs repeatedly:
+   ```
+   lodge view create recent_sessions --collection gym_sessions --where "date > '2026-03-01'" --sort "date desc" --limit 10
+   lodge view run recent_sessions
+   lodge view list
+   lodge view delete recent_sessions
+   ```
+
+7. **Export and import.** Snapshot data or move it between contexts:
+   ```
+   lodge export gym_sessions
+   lodge export --all > backup.json
+   lodge import gym_sessions data.json
+   lodge import --file backup.json
    ```
 
 ## The metaprogramming bit

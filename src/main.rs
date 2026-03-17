@@ -3,10 +3,13 @@ mod collection;
 mod db;
 mod error;
 mod export;
+mod fts;
 mod import;
 mod output;
 mod record;
 mod schema;
+mod snapshot;
+mod timeseries;
 mod types;
 mod view;
 
@@ -53,6 +56,30 @@ fn run() -> error::Result<()> {
                 .iter()
                 .map(|f| format!("{}:{}", f.name, f.field_type.as_str()))
                 .collect();
+            // Handle --fts flag
+            if let Some(fts_spec) = sub_m.get_one::<String>("fts") {
+                let fts_fields: Vec<String> =
+                    fts_spec.split(',').map(|s| s.trim().to_string()).collect();
+                // Validate all FTS fields are text type
+                for fname in &fts_fields {
+                    let field = coll
+                        .fields
+                        .iter()
+                        .find(|f| f.name == *fname)
+                        .ok_or_else(|| {
+                            LodgeError::InvalidFieldsFormat(format!(
+                                "FTS field '{fname}' not found in collection '{name}'"
+                            ))
+                        })?;
+                    if field.field_type != types::FieldType::Text {
+                        return Err(LodgeError::InvalidFieldsFormat(format!(
+                            "FTS field '{fname}' must be text type, got {}",
+                            field.field_type.as_str()
+                        )));
+                    }
+                }
+                fts::create_fts_table(&conn, name, &fts_fields)?;
+            }
             println!(
                 "Created collection '{}' with fields: {}",
                 name,
@@ -63,9 +90,40 @@ fn run() -> error::Result<()> {
         Some(("alter", sub_m)) => {
             let conn = db::open(&cwd)?;
             let name = sub_m.get_one::<String>("name").unwrap();
-            let add_fields = sub_m.get_one::<String>("add-fields").unwrap();
-            collection::alter_collection(&conn, name, add_fields)?;
-            let coll = schema::load_collection(&conn, name)?.unwrap();
+            let add_fields = sub_m.get_one::<String>("add-fields");
+            let enable_fts = sub_m.get_one::<String>("enable-fts");
+            if add_fields.is_none() && enable_fts.is_none() {
+                return Err(LodgeError::InvalidFieldsFormat(
+                    "specify --add-fields and/or --enable-fts".to_string(),
+                ));
+            }
+            if let Some(fields_spec) = add_fields {
+                collection::alter_collection(&conn, name, fields_spec)?;
+            }
+            let coll = schema::load_collection(&conn, name)?
+                .ok_or_else(|| LodgeError::CollectionNotFound(name.to_string()))?;
+            if let Some(fts_spec) = enable_fts {
+                let fts_fields: Vec<String> =
+                    fts_spec.split(',').map(|s| s.trim().to_string()).collect();
+                for fname in &fts_fields {
+                    let field = coll
+                        .fields
+                        .iter()
+                        .find(|f| f.name == *fname)
+                        .ok_or_else(|| {
+                            LodgeError::InvalidFieldsFormat(format!(
+                                "FTS field '{fname}' not found in collection '{name}'"
+                            ))
+                        })?;
+                    if field.field_type != types::FieldType::Text {
+                        return Err(LodgeError::InvalidFieldsFormat(format!(
+                            "FTS field '{fname}' must be text type, got {}",
+                            field.field_type.as_str()
+                        )));
+                    }
+                }
+                fts::create_fts_table(&conn, name, &fts_fields)?;
+            }
             let fields_desc: Vec<String> = coll
                 .fields
                 .iter()
@@ -142,6 +200,21 @@ fn run() -> error::Result<()> {
                 let result = export::export_collection(&conn, name, &format)?;
                 println!("{result}");
             }
+            Ok(())
+        }
+        Some(("snapshot", sub_m)) => {
+            let conn = db::open(&cwd)?;
+            let lodge_dir = db::lodge_dir(&cwd)?;
+            let output_path = sub_m.get_one::<String>("output").map(|s| s.as_str());
+            let path = snapshot::create_snapshot(&conn, &lodge_dir, output_path)?;
+            println!("Snapshot saved to {}", path.display());
+            Ok(())
+        }
+        Some(("restore", sub_m)) => {
+            let conn = db::open(&cwd)?;
+            let path = sub_m.get_one::<String>("path").unwrap();
+            snapshot::restore_snapshot(&conn, path)?;
+            println!("Restored from {path}");
             Ok(())
         }
         Some(("import", sub_m)) => {
@@ -236,6 +309,52 @@ fn run() -> error::Result<()> {
                             })?;
                     let result = record::delete_record(&conn, &coll, id)?;
                     println!("{}", output::format_single(&result, &Format::Json));
+                    Ok(())
+                }
+                Some(("search", search_m)) => {
+                    let query = search_m.get_one::<String>("query").unwrap();
+                    let limit = search_m
+                        .get_one::<String>("limit")
+                        .and_then(|s| s.parse::<i64>().ok());
+                    let format_str = search_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
+                    let results = fts::search_records(&conn, collection_name, query, limit)?;
+                    println!("{}", output::format_output(&results, &format));
+                    Ok(())
+                }
+                Some(("streak", streak_m)) => {
+                    let field = streak_m.get_one::<String>("field").unwrap();
+                    let format_str = streak_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
+                    let result = timeseries::streak(&conn, &coll, field)?;
+                    println!("{}", output::format_single(&result, &format));
+                    Ok(())
+                }
+                Some(("gaps", gaps_m)) => {
+                    let field = gaps_m.get_one::<String>("field").unwrap();
+                    let threshold: i64 = gaps_m
+                        .get_one::<String>("threshold")
+                        .unwrap()
+                        .parse()
+                        .unwrap_or(1);
+                    let format_str = gaps_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
+                    let results = timeseries::gaps(&conn, &coll, field, threshold)?;
+                    println!("{}", output::format_output(&results, &format));
+                    Ok(())
+                }
+                Some(("rolling-avg", avg_m)) => {
+                    let field = avg_m.get_one::<String>("field").unwrap();
+                    let over = avg_m.get_one::<String>("over").unwrap();
+                    let window: i64 = avg_m
+                        .get_one::<String>("window")
+                        .unwrap()
+                        .parse()
+                        .unwrap_or(7);
+                    let format_str = avg_m.get_one::<String>("format").unwrap();
+                    let format = Format::from_str(format_str).unwrap_or(Format::Json);
+                    let results = timeseries::rolling_average(&conn, &coll, field, over, window)?;
+                    println!("{}", output::format_output(&results, &format));
                     Ok(())
                 }
                 _ => unreachable!(),

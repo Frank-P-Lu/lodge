@@ -39,7 +39,10 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .long("fields")
                         .required(true)
                         .help("Field definitions (e.g. \"title:text, priority:int\")"),
-                ),
+                )
+                .arg(Arg::new("fts").long("fts").help(
+                    "Enable full-text search on these fields (comma-separated, must be text type)",
+                )),
         )
         .subcommand(
             Command::new("alter")
@@ -52,9 +55,11 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 .arg(
                     Arg::new("add-fields")
                         .long("add-fields")
-                        .required(true)
                         .help("New field definitions to add (e.g. \"status:text, due:date\")"),
-                ),
+                )
+                .arg(Arg::new("enable-fts").long("enable-fts").help(
+                    "Enable full-text search on these fields (comma-separated, must be text type)",
+                )),
         )
         .subcommand(
             Command::new("sql")
@@ -152,6 +157,24 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .long("file")
                         .help("Import a full export file (all collections)"),
                 ),
+        )
+        .subcommand(
+            Command::new("snapshot")
+                .about("Create a snapshot of the entire database")
+                .arg(
+                    Arg::new("output")
+                        .long("output")
+                        .help("Custom output path for the snapshot file"),
+                ),
+        )
+        .subcommand(
+            Command::new("restore")
+                .about("Restore from a snapshot file")
+                .arg(
+                    Arg::new("path")
+                        .required(true)
+                        .help("Path to the snapshot JSON file"),
+                ),
         );
 
     // Add dynamic subcommands for each collection
@@ -214,6 +237,96 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             Command::new("delete")
                 .about("Delete a record by id")
                 .arg(Arg::new("id").required(true).help("Record ID to delete")),
+        );
+
+        // search subcommand (FTS)
+        coll_cmd = coll_cmd.subcommand(
+            Command::new("search")
+                .about("Full-text search records")
+                .arg(Arg::new("query").required(true).help("Search query"))
+                .arg(
+                    Arg::new("limit")
+                        .long("limit")
+                        .help("Maximum number of results"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
+        );
+
+        // streak subcommand (time-series)
+        coll_cmd = coll_cmd.subcommand(
+            Command::new("streak")
+                .about("Compute consecutive-day streaks for a date field")
+                .arg(
+                    Arg::new("field")
+                        .long("field")
+                        .required(true)
+                        .help("Date field to analyze"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
+        );
+
+        // gaps subcommand (time-series)
+        coll_cmd = coll_cmd.subcommand(
+            Command::new("gaps")
+                .about("Find gaps in date sequences exceeding a threshold")
+                .arg(
+                    Arg::new("field")
+                        .long("field")
+                        .required(true)
+                        .help("Date field to analyze"),
+                )
+                .arg(
+                    Arg::new("threshold")
+                        .long("threshold")
+                        .default_value("1")
+                        .help("Minimum gap in days to report (default: 1)"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
+        );
+
+        // rolling-avg subcommand (time-series)
+        coll_cmd = coll_cmd.subcommand(
+            Command::new("rolling-avg")
+                .about("Compute rolling average of a numeric field over a date field")
+                .arg(
+                    Arg::new("field")
+                        .long("field")
+                        .required(true)
+                        .help("Numeric field to average"),
+                )
+                .arg(
+                    Arg::new("over")
+                        .long("over")
+                        .required(true)
+                        .help("Date field to order by"),
+                )
+                .arg(
+                    Arg::new("window")
+                        .long("window")
+                        .default_value("7")
+                        .help("Window size in rows (default: 7)"),
+                )
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .default_value("json")
+                        .help("Output format: json, table, csv"),
+                ),
         );
 
         cmd = cmd.subcommand(coll_cmd);
