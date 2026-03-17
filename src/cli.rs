@@ -283,7 +283,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             let help: &'static str = Box::leak(
                 format!("({}) {}", field.field_type.as_str(), field.name).into_boxed_str(),
             );
-            add_cmd = add_cmd.arg(Arg::new(fname).long(fname).help(help));
+            add_cmd = add_cmd.arg(Arg::new(fname).long(fname).help(help).allow_hyphen_values(true));
         }
         add_cmd = add_cmd.arg(
             Arg::new("format")
@@ -320,7 +320,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             let fname: &'static str = Box::leak(field.name.clone().into_boxed_str());
             let help: &'static str =
                 Box::leak(format!("({}) new value", field.field_type.as_str()).into_boxed_str());
-            update_cmd = update_cmd.arg(Arg::new(fname).long(fname).help(help));
+            update_cmd = update_cmd.arg(Arg::new(fname).long(fname).help(help).allow_hyphen_values(true));
         }
         update_cmd = update_cmd.arg(
             Arg::new("format")

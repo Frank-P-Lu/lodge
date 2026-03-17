@@ -13,7 +13,7 @@ pub enum FieldType {
 impl FieldType {
     pub fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "text" | "string" => Ok(FieldType::Text),
+            "text" => Ok(FieldType::Text),
             "int" | "integer" => Ok(FieldType::Int),
             "real" | "float" | "double" => Ok(FieldType::Real),
             "bool" | "boolean" => Ok(FieldType::Bool),
