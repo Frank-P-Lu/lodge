@@ -80,3 +80,4 @@ Dev: `tempfile`, `assert_cmd`, `predicates`
 - Prefer clear error messages that tell the agent what to do next (e.g., "Run `lodge init` first").
 - No unwrap in library code. Use the `Result<T>` alias from `error.rs`.
 - Field names and collection names must be valid identifiers (alphanumeric + underscore, no leading digit).
+- **TDD**: write the test first, confirm it fails, then implement. All new features and bug fixes must be covered by integration tests in `tests/` before the implementation lands.

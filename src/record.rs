@@ -128,7 +128,42 @@ pub fn query_records(
     sort: Option<&str>,
     limit: Option<i64>,
 ) -> Result<Vec<Value>> {
-    let mut sql = format!("SELECT * FROM \"{}\"", collection.name);
+    query_records_with_fields(conn, collection, where_clause, sort, limit, None)
+}
+
+pub fn query_records_with_fields(
+    conn: &Connection,
+    collection: &Collection,
+    where_clause: Option<&str>,
+    sort: Option<&str>,
+    limit: Option<i64>,
+    fields: Option<&[&str]>,
+) -> Result<Vec<Value>> {
+    let columns = match fields {
+        Some(cols) => {
+            // Validate that all requested fields exist
+            let valid_names: Vec<&str> = std::iter::once("id")
+                .chain(collection.fields.iter().map(|f| f.name.as_str()))
+                .chain(["created_at", "updated_at"].iter().copied())
+                .collect();
+            for col in cols {
+                if !valid_names.contains(col) {
+                    return Err(LodgeError::InvalidFieldsFormat(format!(
+                        "unknown field '{}' in collection '{}'. Valid fields: {}",
+                        col,
+                        collection.name,
+                        valid_names.join(", ")
+                    )));
+                }
+            }
+            cols.iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+        None => "*".to_string(),
+    };
+    let mut sql = format!("SELECT {} FROM \"{}\"", columns, collection.name);
     if let Some(w) = where_clause {
         sql.push_str(&format!(" WHERE {w}"));
     }

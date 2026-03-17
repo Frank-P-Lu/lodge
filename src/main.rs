@@ -411,8 +411,12 @@ fn handle_collection_query(
     let limit = query_m
         .get_one::<String>("limit")
         .and_then(|s| s.parse::<i64>().ok());
+    let fields_str = query_m.get_one::<String>("fields");
+    let fields_vec: Option<Vec<&str>> = fields_str.map(|s| s.split(',').map(|f| f.trim()).collect());
+    let fields_slice = fields_vec.as_deref();
     let format = get_format(query_m);
-    let results = record::query_records(conn, coll, where_clause, sort, limit)?;
+    let results =
+        record::query_records_with_fields(conn, coll, where_clause, sort, limit, fields_slice)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }

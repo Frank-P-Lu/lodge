@@ -325,6 +325,11 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .help("Maximum number of records"),
                 )
                 .arg(
+                    Arg::new("fields")
+                        .long("fields")
+                        .help("Comma-separated list of fields to return (e.g. \"id,title,status\")"),
+                )
+                .arg(
                     Arg::new("format")
                         .long("format")
                         .default_value("json")

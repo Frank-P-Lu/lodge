@@ -103,3 +103,47 @@ fn query_with_format_csv() {
         .stdout(predicate::str::contains("id"))
         .stdout(predicate::str::contains("title"));
 }
+
+#[test]
+fn query_with_fields_projects_columns() {
+    let dir = setup_with_data();
+    let output = common::lodge_cmd(&dir)
+        .args(["tasks", "query", "--fields", "id,title"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+    // Should have only id and title, not priority or other fields
+    let first = arr[0].as_object().unwrap();
+    assert!(first.contains_key("id"));
+    assert!(first.contains_key("title"));
+    assert!(!first.contains_key("priority"));
+    assert!(!first.contains_key("created_at"));
+}
+
+#[test]
+fn query_with_fields_and_where() {
+    let dir = setup_with_data();
+    let output = common::lodge_cmd(&dir)
+        .args(["tasks", "query", "--fields", "title,priority", "--where", "priority > 1"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    let first = arr[0].as_object().unwrap();
+    assert!(first.contains_key("title"));
+    assert!(first.contains_key("priority"));
+    assert!(!first.contains_key("id"));
+}
+
+#[test]
+fn query_with_fields_invalid_field_errors() {
+    let dir = setup_with_data();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "query", "--fields", "id,nonexistent"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown field 'nonexistent'"));
+}
