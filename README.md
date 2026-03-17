@@ -22,38 +22,85 @@ Lodge replaces that with a real database (SQLite) behind a CLI the agent operate
    ```
    lodge create gym_sessions --fields "date:date, duration:int, notes:text"
    ```
-   This creates the table and makes a new CLI subcommand available immediately.
+   This creates the table and makes a new CLI subcommand available immediately. Text fields automatically get full-text search enabled.
 
 3. **Use it.** The generated CLI is the primary interface:
    ```
    lodge gym_sessions add --date 2026-03-17 --duration 45 --notes "leg day"
    lodge gym_sessions query --where "date > 2026-03-01" --sort "date desc"
    lodge gym_sessions update --id 3 --notes "leg day, added squats"
+   lodge gym_sessions update --id 3 --clear-notes   # set a field to null
    lodge gym_sessions delete --id 3
    ```
 
-4. **Discover it.** Any agent in a future session runs `lodge help` and immediately sees what collections exist, what fields they have, and what commands are available. The help output is dynamically generated from the schema, so it's always accurate.
+4. **Search text fields.** Full-text search is automatically enabled for all text fields:
+   ```
+   lodge gym_sessions search "leg day"
+   lodge gym_sessions search "squats" --limit 5
+   ```
 
-5. **Evolve it.** Add fields, create new collections. The CLI updates automatically:
+5. **Inspect a collection.** View the schema for a specific collection:
+   ```
+   lodge gym_sessions schema
+   ```
+
+6. **Discover it.** Any agent in a future session runs `lodge help` and immediately sees what collections exist, what fields they have, and what commands are available. The help output is dynamically generated from the schema, so it's always accurate.
+
+   List all collections and their fields:
+   ```
+   lodge list
+   ```
+
+7. **Evolve it.** Add, rename, or drop fields. The CLI updates automatically:
    ```
    lodge alter gym_sessions --add-fields "muscle_group:text"
+   lodge alter gym_sessions --rename-field "notes:description"
+   lodge alter gym_sessions --drop-fields "muscle_group"
    ```
 
-6. **Save views.** Bookmark queries the agent runs repeatedly:
+8. **Save views.** Bookmark queries the agent runs repeatedly:
    ```
    lodge view create recent_sessions --collection gym_sessions --where "date > '2026-03-01'" --sort "date desc" --limit 10
    lodge view run recent_sessions
    lodge view list
+   lodge view show recent_sessions
+   lodge view update recent_sessions --limit 20
    lodge view delete recent_sessions
    ```
 
-7. **Export and import.** Snapshot data or move it between contexts:
+   Shorthand for running a view without the `view` prefix:
    ```
-   lodge export gym_sessions
-   lodge export --all > backup.json
-   lodge import gym_sessions data.json
-   lodge import --file backup.json
+   lodge run recent_sessions
    ```
+
+9. **Time-series analysis.** Built-in commands for streak tracking and trend analysis on date fields:
+   ```
+   lodge gym_sessions streak --field date
+   lodge gym_sessions gaps --field date --threshold 2
+   lodge gym_sessions rolling-avg --field duration --over date --window 7
+   ```
+
+10. **Export and import.** Snapshot data or move it between contexts:
+    ```
+    lodge export gym_sessions
+    lodge export --all > backup.json
+    lodge import --collection gym_sessions --file data.json
+    lodge import --all --file backup.json
+    ```
+
+11. **Snapshot and restore.** Save and restore the full database:
+    ```
+    lodge snapshot
+    lodge snapshot --output my_backup.db
+    lodge restore path/to/snapshot.db
+    ```
+
+12. **Audit log.** Every write operation is logged automatically:
+    ```
+    lodge log
+    lodge log --collection gym_sessions
+    lodge log --limit 50
+    ```
 
 ## The metaprogramming bit
 
@@ -68,6 +115,7 @@ Lodge doesn't have hardcoded knowledge of your data. When you create a collectio
 lodge create habits --fields "name:text, date:date, value:text, notes:text"
 lodge habits add --name gym --date 2026-03-17 --value "45min"
 lodge habits query --where "name = 'gym'" --sort "date desc" --limit 7
+lodge habits streak --field date
 ```
 
 **Project state over time.** Track status changes so the agent knows the full history, not just current state.
@@ -75,6 +123,7 @@ lodge habits query --where "name = 'gym'" --sort "date desc" --limit 7
 lodge create projects --fields "name:text, status:text, updated_at:datetime, notes:text"
 lodge projects add --name myapp --status "launched" --notes "v1 shipped"
 lodge projects query --where "name = 'myapp'" --sort "updated_at desc"
+lodge projects search "launched"
 ```
 
 **Tasks with priorities and deadlines.** Replace unstructured todo lists with something queryable.
@@ -87,6 +136,7 @@ lodge tasks query --where "status = 'open'" --sort "priority asc, deadline asc"
 ```
 lodge create people --fields "name:text, last_contact:date, context:text, notes:text"
 lodge people query --where "last_contact < 2026-03-01" --sort "last_contact asc"
+lodge people search "project kickoff"
 ```
 
 **Anything else.** Decisions log, metrics over time, reading lists, whatever. The agent creates what it needs.
