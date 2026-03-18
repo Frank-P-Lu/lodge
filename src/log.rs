@@ -128,21 +128,47 @@ fn format_val(v: &Value) -> String {
     }
 }
 
-pub fn query_log(conn: &Connection, collection: Option<&str>, limit: i64, verbose: bool) -> Result<Vec<Value>> {
-    let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match collection {
-        Some(c) => (
-            "SELECT id, timestamp, collection, operation, record_id, success, error, before_data, after_data \
-             FROM _lodge_log WHERE collection = ?1 ORDER BY id DESC LIMIT ?2"
-                .to_string(),
-            vec![Box::new(c.to_string()) as Box<dyn rusqlite::types::ToSql>, Box::new(limit)],
-        ),
-        None => (
-            "SELECT id, timestamp, collection, operation, record_id, success, error, before_data, after_data \
-             FROM _lodge_log ORDER BY id DESC LIMIT ?1"
-                .to_string(),
-            vec![Box::new(limit) as Box<dyn rusqlite::types::ToSql>],
-        ),
+pub fn query_log(
+    conn: &Connection,
+    collection: Option<&str>,
+    limit: i64,
+    verbose: bool,
+    since: Option<&str>,
+) -> Result<Vec<Value>> {
+    let mut conditions = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut idx = 1;
+
+    if let Some(c) = collection {
+        conditions.push(format!("collection = ?{idx}"));
+        params.push(Box::new(c.to_string()));
+        idx += 1;
+    }
+
+    if let Some(s) = since {
+        // Expand date-only to datetime for inclusive comparison
+        let since_ts = if s.contains('T') {
+            s.to_string()
+        } else {
+            format!("{s}T00:00:00")
+        };
+        conditions.push(format!("timestamp >= ?{idx}"));
+        params.push(Box::new(since_ts));
+        idx += 1;
+    }
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conditions.join(" AND "))
     };
+
+    let sql = format!(
+        "SELECT id, timestamp, collection, operation, record_id, success, error, before_data, after_data \
+         FROM _lodge_log{where_clause} ORDER BY id DESC LIMIT ?{idx}"
+    );
+    params.push(Box::new(limit));
+    let _ = idx;
 
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 

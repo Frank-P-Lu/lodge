@@ -423,6 +423,105 @@ fn log_summary_failed() {
 }
 
 #[test]
+fn log_since_filters_by_date() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Old"])
+        .assert()
+        .success();
+
+    // All entries are from "now", so --since tomorrow should return nothing
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--since", "2099-01-01"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 0);
+}
+
+#[test]
+fn log_since_includes_entries_after_date() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Recent"])
+        .assert()
+        .success();
+
+    // --since a date far in the past should return all entries
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--since", "2000-01-01"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["collection"], "tasks");
+}
+
+#[test]
+fn log_since_with_datetime() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Now"])
+        .assert()
+        .success();
+
+    // Full datetime far in the past — should include everything
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--since", "2000-01-01T00:00:00"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+}
+
+#[test]
+fn log_since_combines_with_collection_filter() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["create", "tasks", "--fields", "title:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["create", "notes", "--fields", "body:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Task1"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["notes", "add", "--body", "Note1"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "tasks", "--since", "2000-01-01"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["collection"], "tasks");
+}
+
+#[test]
+fn log_since_invalid_date_errors() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["log", "--since", "not-a-date"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid --since"));
+}
+
+#[test]
 fn log_reserved_name() {
     let dir = common::setup();
     common::lodge_cmd(&dir)

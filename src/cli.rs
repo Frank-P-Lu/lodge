@@ -268,6 +268,11 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .long("verbose")
                         .action(clap::ArgAction::SetTrue)
                         .help("Show full before/after data for each entry"),
+                )
+                .arg(
+                    Arg::new("since")
+                        .long("since")
+                        .help("Show entries from this date/datetime onward (e.g. 2026-03-17 or 2026-03-17T14:00:00)"),
                 ),
         )
         .subcommand(

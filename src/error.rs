@@ -75,6 +75,9 @@ pub enum LodgeError {
     #[error("Cannot modify protected field '{0}' (id, created_at, updated_at are auto-managed)")]
     ProtectedField(String),
 
+    #[error("{0}")]
+    InvalidInput(String),
+
     #[error("SQL error: {0}")]
     Sql(String),
 

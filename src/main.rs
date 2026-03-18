@@ -354,8 +354,22 @@ fn handle_log(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
     let verbose = sub_m.get_flag("verbose");
+    let since = sub_m.get_one::<String>("since").map(|s| s.as_str());
+    // Validate --since format
+    if let Some(s) = since {
+        let valid = if s.contains('T') {
+            chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
+        } else {
+            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
+        };
+        if !valid {
+            return Err(error::LodgeError::InvalidInput(
+                "Invalid --since value. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS".to_string(),
+            ));
+        }
+    }
     let format = get_format(sub_m, df);
-    let results = log::query_log(&conn, collection, limit, verbose)?;
+    let results = log::query_log(&conn, collection, limit, verbose, since)?;
     // Strip before/after from non-JSON formats — inline JSON makes table/csv too wide
     let results = match format {
         output::Format::Json => results,
