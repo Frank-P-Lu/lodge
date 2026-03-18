@@ -117,6 +117,7 @@ fn run() -> error::Result<()> {
         Some(("set", sub_m)) => handle_set(&cwd, sub_m),
         Some(("create", sub_m)) => handle_create(&cwd, sub_m),
         Some(("alter", sub_m)) => handle_alter(&cwd, sub_m),
+        Some(("drop", sub_m)) => handle_drop(&cwd, sub_m),
         Some(("sql", sub_m)) => handle_sql(&cwd, sub_m, df),
         Some(("view", sub_m)) => handle_view(&cwd, sub_m, df, &settings),
         Some(("export", sub_m)) => handle_export(&cwd, sub_m, df),
@@ -240,6 +241,14 @@ fn handle_alter(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         name,
         fields_desc.join(", ")
     );
+    Ok(())
+}
+
+fn handle_drop(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+    let conn = db::open(cwd)?;
+    let name = get_arg(sub_m, "name")?;
+    collection::drop_collection(&conn, name)?;
+    println!("Dropped collection '{name}'");
     Ok(())
 }
 

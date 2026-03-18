@@ -3,8 +3,8 @@ use crate::types::parse_fields;
 use rusqlite::Connection;
 
 const RESERVED_NAMES: &[&str] = &[
-    "init", "create", "alter", "sql", "help", "guide", "view", "export", "import", "snapshot",
-    "restore", "run", "list", "log", "set",
+    "init", "create", "alter", "drop", "sql", "help", "guide", "view", "export", "import",
+    "snapshot", "restore", "run", "list", "log", "set",
 ];
 
 /// Check whether a collection exists in the database.
@@ -192,6 +192,36 @@ pub fn rename_field(
             rusqlite::params![new_name, collection, old_name],
         )?;
     }
+
+    Ok(())
+}
+
+pub fn drop_collection(conn: &Connection, name: &str) -> Result<()> {
+    validate_collection_exists(conn, name)?;
+
+    // Remove metadata
+    conn.execute(
+        "DELETE FROM _lodge_meta WHERE collection = ?1",
+        rusqlite::params![name],
+    )?;
+
+    // Remove FTS table if it exists
+    crate::fts::drop_fts_table(conn, name)?;
+
+    // Remove views for this collection
+    conn.execute(
+        "DELETE FROM _lodge_views WHERE collection = ?1",
+        rusqlite::params![name],
+    )?;
+
+    // Remove query log entries
+    conn.execute(
+        "DELETE FROM _lodge_query_log WHERE collection = ?1",
+        rusqlite::params![name],
+    )?;
+
+    // Drop the collection table (mutation log is preserved)
+    conn.execute(&format!("DROP TABLE \"{}\"", name), [])?;
 
     Ok(())
 }

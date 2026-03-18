@@ -71,6 +71,15 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 ),
         )
         .subcommand(
+            Command::new("drop")
+                .about("Drop a collection and all its data, views, and search indexes")
+                .arg(
+                    Arg::new("name")
+                        .required(true)
+                        .help("Name of the collection to drop"),
+                ),
+        )
+        .subcommand(
             Command::new("sql")
                 .about("Execute a raw SQL query")
                 .arg(
