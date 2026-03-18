@@ -166,7 +166,12 @@ fn alter_rename_protected_field_errors() {
 
     for field in &["id", "created_at", "updated_at"] {
         common::lodge_cmd(&dir)
-            .args(["alter", "tasks", "--rename-field", &format!("{field}:newname")])
+            .args([
+                "alter",
+                "tasks",
+                "--rename-field",
+                &format!("{field}:newname"),
+            ])
             .assert()
             .failure()
             .stderr(predicate::str::contains("protected"));
@@ -235,11 +240,25 @@ fn alter_drop_protected_field_errors() {
 fn alter_drop_rebuilds_fts() {
     let dir = common::setup();
     common::lodge_cmd(&dir)
-        .args(["create", "tasks", "--fields", "title:text,notes:text,priority:int"])
+        .args([
+            "create",
+            "tasks",
+            "--fields",
+            "title:text,notes:text,priority:int",
+        ])
         .assert()
         .success();
     common::lodge_cmd(&dir)
-        .args(["tasks", "add", "--title", "searchable task", "--notes", "some notes", "--priority", "1"])
+        .args([
+            "tasks",
+            "add",
+            "--title",
+            "searchable task",
+            "--notes",
+            "some notes",
+            "--priority",
+            "1",
+        ])
         .assert()
         .success();
 

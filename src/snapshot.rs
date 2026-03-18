@@ -81,7 +81,9 @@ pub fn restore_snapshot(conn: &Connection, path: &str) -> Result<()> {
     let version = snapshot
         .get("lodge_version")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| LodgeError::InvalidSnapshot("missing or invalid 'lodge_version'".to_string()))?;
+        .ok_or_else(|| {
+            LodgeError::InvalidSnapshot("missing or invalid 'lodge_version'".to_string())
+        })?;
     if version != 1 {
         return Err(LodgeError::InvalidSnapshot(format!(
             "unsupported snapshot version {version} (expected 1)"

@@ -265,6 +265,20 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 ),
         )
         .subcommand(
+            Command::new("set")
+                .about("Set a configuration value in .lodge/settings.json")
+                .arg(
+                    Arg::new("key")
+                        .required(true)
+                        .help("Setting name (default_format, distinct_threshold)"),
+                )
+                .arg(
+                    Arg::new("value")
+                        .required(true)
+                        .help("Setting value"),
+                ),
+        )
+        .subcommand(
             Command::new("run")
                 .about("Run a saved view by name")
                 .arg(
@@ -306,7 +320,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             let help: &'static str = Box::leak(
                 format!("({}) {}", field.field_type.as_str(), field.name).into_boxed_str(),
             );
-            add_cmd = add_cmd.arg(Arg::new(fname).long(fname).help(help).allow_hyphen_values(true));
+            add_cmd = add_cmd.arg(
+                Arg::new(fname)
+                    .long(fname)
+                    .help(help)
+                    .allow_hyphen_values(true),
+            );
         }
         add_cmd = add_cmd.arg(
             Arg::new("format")
@@ -317,28 +336,27 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
         coll_cmd = coll_cmd.subcommand(add_cmd);
 
         // query subcommand
-        coll_cmd = coll_cmd.subcommand(
-            Command::new("query")
-                .about("Query records")
-                .arg(Arg::new("where").long("where").help("SQL WHERE clause"))
-                .arg(Arg::new("sort").long("sort").help("ORDER BY clause"))
-                .arg(
-                    Arg::new("limit")
-                        .long("limit")
-                        .help("Maximum number of records"),
-                )
-                .arg(
-                    Arg::new("fields")
-                        .long("fields")
-                        .help("Comma-separated list of fields to return (e.g. \"id,title,status\")"),
-                )
-                .arg(
-                    Arg::new("format")
-                        .long("format")
-                        .default_value("json")
-                        .help("Output format: json, table, csv"),
-                ),
-        );
+        coll_cmd =
+            coll_cmd.subcommand(
+                Command::new("query")
+                    .about("Query records")
+                    .arg(Arg::new("where").long("where").help("SQL WHERE clause"))
+                    .arg(Arg::new("sort").long("sort").help("ORDER BY clause"))
+                    .arg(
+                        Arg::new("limit")
+                            .long("limit")
+                            .help("Maximum number of records"),
+                    )
+                    .arg(Arg::new("fields").long("fields").help(
+                        "Comma-separated list of fields to return (e.g. \"id,title,status\")",
+                    ))
+                    .arg(
+                        Arg::new("format")
+                            .long("format")
+                            .default_value("json")
+                            .help("Output format: json, table, csv"),
+                    ),
+            );
 
         // update subcommand
         let mut update_cmd = Command::new("update")
@@ -348,7 +366,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
             let fname: &'static str = Box::leak(field.name.clone().into_boxed_str());
             let help: &'static str =
                 Box::leak(format!("({}) new value", field.field_type.as_str()).into_boxed_str());
-            update_cmd = update_cmd.arg(Arg::new(fname).long(fname).help(help).allow_hyphen_values(true));
+            update_cmd = update_cmd.arg(
+                Arg::new(fname)
+                    .long(fname)
+                    .help(help)
+                    .allow_hyphen_values(true),
+            );
 
             let clear_name: &'static str =
                 Box::leak(format!("clear-{}", field.name).into_boxed_str());

@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 const RESERVED_NAMES: &[&str] = &[
     "init", "create", "alter", "sql", "help", "guide", "view", "export", "import", "snapshot",
-    "restore", "run", "list", "log",
+    "restore", "run", "list", "log", "set",
 ];
 
 /// Check whether a collection exists in the database.
@@ -132,7 +132,12 @@ fn validate_not_protected(field: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn rename_field(conn: &Connection, collection: &str, old_name: &str, new_name: &str) -> Result<()> {
+pub fn rename_field(
+    conn: &Connection,
+    collection: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Result<()> {
     validate_collection_exists(conn, collection)?;
     validate_not_protected(old_name)?;
     validate_field_exists(conn, collection, old_name)?;
@@ -165,7 +170,10 @@ pub fn rename_field(conn: &Connection, collection: &str, old_name: &str, new_nam
     }
 
     conn.execute(
-        &format!("ALTER TABLE \"{}\" RENAME COLUMN \"{}\" TO \"{}\"", collection, old_name, new_name),
+        &format!(
+            "ALTER TABLE \"{}\" RENAME COLUMN \"{}\" TO \"{}\"",
+            collection, old_name, new_name
+        ),
         [],
     )?;
     conn.execute(

@@ -126,7 +126,14 @@ fn query_with_fields_projects_columns() {
 fn query_with_fields_and_where() {
     let dir = setup_with_data();
     let output = common::lodge_cmd(&dir)
-        .args(["tasks", "query", "--fields", "title,priority", "--where", "priority > 1"])
+        .args([
+            "tasks",
+            "query",
+            "--fields",
+            "title,priority",
+            "--where",
+            "priority > 1",
+        ])
         .output()
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();

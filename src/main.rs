@@ -9,6 +9,7 @@ mod log;
 mod output;
 mod record;
 mod schema;
+mod settings;
 mod snapshot;
 mod timeseries;
 mod types;
@@ -19,6 +20,7 @@ use error::LodgeError;
 use output::Format;
 use rusqlite::Connection;
 use schema::Collection;
+use settings::Settings;
 use std::path::Path;
 use std::process;
 
@@ -35,11 +37,17 @@ fn get_arg<'a>(m: &'a ArgMatches, name: &str) -> error::Result<&'a String> {
         .ok_or_else(|| LodgeError::MissingArgument(name.to_string()))
 }
 
-/// Get the --format flag and parse it, defaulting to JSON.
-fn get_format(m: &ArgMatches) -> Format {
-    m.get_one::<String>("format")
-        .and_then(|s| Format::from_str(s))
-        .unwrap_or(Format::Json)
+/// Get the --format flag and parse it, falling back to the given default.
+fn get_format(m: &ArgMatches, default_format: &str) -> Format {
+    let source = m.value_source("format");
+    if source == Some(clap::parser::ValueSource::CommandLine) {
+        if let Some(s) = m.get_one::<String>("format") {
+            if let Some(f) = Format::from_str(s) {
+                return f;
+            }
+        }
+    }
+    Format::from_str(default_format).unwrap_or(Format::Json)
 }
 
 /// Parse a required string argument as i64.
@@ -55,21 +63,26 @@ fn get_id(m: &ArgMatches) -> error::Result<i64> {
 fn run() -> error::Result<()> {
     let cwd = std::env::current_dir()?;
 
-    // Try to load collections and view names from existing DB (for dynamic subcommands)
-    let (collections, view_names) = if let Ok(conn) = db::open(&cwd) {
+    // Try to load collections, view names, and settings from existing DB
+    let (collections, view_names, settings) = if let Some(lodge_dir) = db::find_lodge_dir(&cwd) {
+        let conn = db::open(&cwd)?;
         let colls = schema::load_collections(&conn)?;
         let views = view::load_view_names(&conn)?;
-        (colls, views)
+        let s = settings::load_settings(&lodge_dir);
+        (colls, views, s)
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), Settings::default())
     };
 
     let cmd = cli::build_cli(&collections, &view_names);
     let matches = cmd.get_matches();
+    let df = &settings.default_format;
 
     match matches.subcommand() {
         Some(("init", _)) => {
             db::init(&cwd)?;
+            let lodge_dir = db::lodge_dir(&cwd)?;
+            settings::create_default_settings(&lodge_dir)?;
             println!("Initialized lodge database in .lodge/");
             Ok(())
         }
@@ -77,20 +90,32 @@ fn run() -> error::Result<()> {
             print_guide();
             Ok(())
         }
+        Some(("set", sub_m)) => handle_set(&cwd, sub_m),
         Some(("create", sub_m)) => handle_create(&cwd, sub_m),
         Some(("alter", sub_m)) => handle_alter(&cwd, sub_m),
-        Some(("sql", sub_m)) => handle_sql(&cwd, sub_m),
-        Some(("view", sub_m)) => handle_view(&cwd, sub_m),
-        Some(("export", sub_m)) => handle_export(&cwd, sub_m),
+        Some(("sql", sub_m)) => handle_sql(&cwd, sub_m, df),
+        Some(("view", sub_m)) => handle_view(&cwd, sub_m, df),
+        Some(("export", sub_m)) => handle_export(&cwd, sub_m, df),
         Some(("snapshot", sub_m)) => handle_snapshot(&cwd, sub_m),
         Some(("restore", sub_m)) => handle_restore(&cwd, sub_m),
         Some(("import", sub_m)) => handle_import(&cwd, sub_m),
-        Some(("log", sub_m)) => handle_log(&cwd, sub_m),
-        Some(("list", sub_m)) => handle_list(&cwd, sub_m),
-        Some(("run", sub_m)) => handle_run_view(&cwd, sub_m),
-        Some((collection_name, sub_m)) => handle_collection(&cwd, collection_name, sub_m),
+        Some(("log", sub_m)) => handle_log(&cwd, sub_m, df),
+        Some(("list", sub_m)) => handle_list(&cwd, sub_m, df, &settings),
+        Some(("run", sub_m)) => handle_run_view(&cwd, sub_m, df),
+        Some((collection_name, sub_m)) => {
+            handle_collection(&cwd, collection_name, sub_m, df, &settings)
+        }
         _ => unreachable!(),
     }
+}
+
+fn handle_set(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+    let lodge_dir = db::lodge_dir(cwd)?;
+    let key = get_arg(sub_m, "key")?;
+    let value = get_arg(sub_m, "value")?;
+    settings::set_setting(&lodge_dir, key, value)?;
+    println!("Set {key} = {value}");
+    Ok(())
 }
 
 fn handle_create(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
@@ -194,17 +219,17 @@ fn handle_alter(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_sql(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_sql(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
     let conn = db::open(cwd)?;
     let collections_now = schema::load_collections(&conn)?;
     let query = get_arg(sub_m, "query")?;
-    let format = get_format(sub_m);
+    let format = get_format(sub_m, df);
     let results = record::execute_sql(&conn, query, &collections_now)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }
 
-fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
     let conn = db::open(cwd)?;
     match sub_m.subcommand() {
         Some(("create", create_m)) => {
@@ -220,7 +245,7 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
             Ok(())
         }
         Some(("list", list_m)) => {
-            let format = get_format(list_m);
+            let format = get_format(list_m, df);
             let views = view::list_views(&conn)?;
             println!("{}", output::format_output(&views, &format)?);
             Ok(())
@@ -228,7 +253,10 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         Some(("show", show_m)) => {
             let name = get_arg(show_m, "name")?;
             let v = view::show_view(&conn, name)?;
-            println!("{}", serde_json::to_string_pretty(&v).map_err(|e| LodgeError::Sql(e.to_string()))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&v).map_err(|e| LodgeError::Sql(e.to_string()))?
+            );
             Ok(())
         }
         Some(("update", update_m)) => {
@@ -242,9 +270,7 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
             println!("Updated view '{name}'");
             Ok(())
         }
-        Some(("run", run_m)) => {
-            run_view_inner(&conn, run_m)
-        }
+        Some(("run", run_m)) => run_view_inner(&conn, run_m, df),
         Some(("delete", delete_m)) => {
             let name = get_arg(delete_m, "name")?;
             view::delete_view(&conn, name)?;
@@ -255,14 +281,14 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     }
 }
 
-fn handle_export(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_export(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
     let conn = db::open(cwd)?;
     if sub_m.get_flag("all") {
         let result = export::export_all(&conn)?;
         println!("{result}");
     } else {
         let name = get_arg(sub_m, "collection")?;
-        let format = get_format(sub_m);
+        let format = get_format(sub_m, df);
         let result = export::export_collection(&conn, name, &format)?;
         println!("{result}");
     }
@@ -297,9 +323,7 @@ fn handle_import(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         }
     } else {
         let name = sub_m.get_one::<String>("collection").ok_or_else(|| {
-            LodgeError::MissingArgument(
-                "specify a collection name or use --all".to_string(),
-            )
+            LodgeError::MissingArgument("specify a collection name or use --all".to_string())
         })?;
         let count = import::import_collection(&conn, name, &data)?;
         println!("Imported {count} records into '{name}'");
@@ -307,14 +331,14 @@ fn handle_import(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_log(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_log(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
     let conn = db::open(cwd)?;
     let collection = sub_m.get_one::<String>("collection").map(|s| s.as_str());
     let limit: i64 = sub_m
         .get_one::<String>("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
-    let format = get_format(sub_m);
+    let format = get_format(sub_m, df);
     let results = log::query_log(&conn, collection, limit)?;
     // Strip before/after from non-JSON formats — inline JSON makes table/csv too wide
     let results = match format {
@@ -336,17 +360,27 @@ fn handle_log(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_list(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_list(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) -> error::Result<()> {
     let conn = db::open(cwd)?;
-    let format = get_format(sub_m);
+    let format = get_format(sub_m, df);
     let colls = schema::load_collections(&conn)?;
+    let threshold = settings.distinct_threshold;
     let result: Vec<serde_json::Value> = colls
         .iter()
         .map(|c| {
             let fields: Vec<serde_json::Value> = c
                 .fields
                 .iter()
-                .map(|f| serde_json::json!({"name": f.name, "type": f.field_type.as_str()}))
+                .map(|f| {
+                    let mut field_json =
+                        serde_json::json!({"name": f.name, "type": f.field_type.as_str()});
+                    if let Ok(Some(values)) =
+                        schema::load_distinct_values(&conn, &c.name, f, threshold)
+                    {
+                        field_json["values"] = serde_json::json!(values);
+                    }
+                    field_json
+                })
                 .collect();
             serde_json::json!({"name": c.name, "fields": fields})
         })
@@ -355,15 +389,15 @@ fn handle_list(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_run_view(cwd: &Path, run_m: &ArgMatches) -> error::Result<()> {
+fn handle_run_view(cwd: &Path, run_m: &ArgMatches, df: &str) -> error::Result<()> {
     let conn = db::open(cwd)?;
-    run_view_inner(&conn, run_m)
+    run_view_inner(&conn, run_m, df)
 }
 
 /// Shared logic for `lodge run <view>` and `lodge view run <view>`.
-fn run_view_inner(conn: &Connection, run_m: &ArgMatches) -> error::Result<()> {
+fn run_view_inner(conn: &Connection, run_m: &ArgMatches, df: &str) -> error::Result<()> {
     let name = get_arg(run_m, "name")?;
-    let format = get_format(run_m);
+    let format = get_format(run_m, df);
     let (collection_name, records) = view::run_view(conn, name)?;
     if run_m.get_flag("meta") {
         let wrapped = serde_json::json!({
@@ -378,21 +412,33 @@ fn run_view_inner(conn: &Connection, run_m: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_collection(cwd: &Path, collection_name: &str, sub_m: &ArgMatches) -> error::Result<()> {
+fn handle_collection(
+    cwd: &Path,
+    collection_name: &str,
+    sub_m: &ArgMatches,
+    df: &str,
+    settings: &Settings,
+) -> error::Result<()> {
     let conn = db::open(cwd)?;
     let coll = schema::load_collection(&conn, collection_name)?
         .ok_or_else(|| LodgeError::CollectionNotFound(collection_name.to_string()))?;
 
     match sub_m.subcommand() {
-        Some(("add", add_m)) => handle_collection_add(&conn, &coll, collection_name, add_m),
-        Some(("query", query_m)) => handle_collection_query(&conn, &coll, query_m),
-        Some(("update", update_m)) => handle_collection_update(&conn, &coll, collection_name, update_m),
-        Some(("delete", delete_m)) => handle_collection_delete(&conn, &coll, collection_name, delete_m),
-        Some(("search", search_m)) => handle_collection_search(&conn, &coll, search_m),
-        Some(("streak", streak_m)) => handle_collection_streak(&conn, &coll, streak_m),
-        Some(("gaps", gaps_m)) => handle_collection_gaps(&conn, &coll, gaps_m),
-        Some(("rolling-avg", avg_m)) => handle_collection_rolling_avg(&conn, &coll, avg_m),
-        Some(("schema", schema_m)) => handle_collection_schema(&coll, schema_m),
+        Some(("add", add_m)) => handle_collection_add(&conn, &coll, collection_name, add_m, df),
+        Some(("query", query_m)) => handle_collection_query(&conn, &coll, query_m, df),
+        Some(("update", update_m)) => {
+            handle_collection_update(&conn, &coll, collection_name, update_m, df)
+        }
+        Some(("delete", delete_m)) => {
+            handle_collection_delete(&conn, &coll, collection_name, delete_m, df)
+        }
+        Some(("search", search_m)) => handle_collection_search(&conn, &coll, search_m, df),
+        Some(("streak", streak_m)) => handle_collection_streak(&conn, &coll, streak_m, df),
+        Some(("gaps", gaps_m)) => handle_collection_gaps(&conn, &coll, gaps_m, df),
+        Some(("rolling-avg", avg_m)) => handle_collection_rolling_avg(&conn, &coll, avg_m, df),
+        Some(("schema", schema_m)) => {
+            handle_collection_schema(&conn, &coll, schema_m, df, settings)
+        }
         _ => unreachable!(),
     }
 }
@@ -402,6 +448,7 @@ fn handle_collection_add(
     coll: &Collection,
     collection_name: &str,
     add_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let mut values = Vec::new();
     for field in &coll.fields {
@@ -414,7 +461,7 @@ fn handle_collection_add(
             "no fields provided -- specify at least one field".into(),
         ));
     }
-    let format = get_format(add_m);
+    let format = get_format(add_m, df);
     let result = record::add_record(conn, coll, &values)?;
     println!("Added record {} to '{}'", result["id"], collection_name);
     println!("{}", output::format_single(&result, &format)?);
@@ -425,6 +472,7 @@ fn handle_collection_query(
     conn: &Connection,
     coll: &Collection,
     query_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let where_clause = query_m.get_one::<String>("where").map(|s| s.as_str());
     let sort = query_m.get_one::<String>("sort").map(|s| s.as_str());
@@ -432,9 +480,10 @@ fn handle_collection_query(
         .get_one::<String>("limit")
         .and_then(|s| s.parse::<i64>().ok());
     let fields_str = query_m.get_one::<String>("fields");
-    let fields_vec: Option<Vec<&str>> = fields_str.map(|s| s.split(',').map(|f| f.trim()).collect());
+    let fields_vec: Option<Vec<&str>> =
+        fields_str.map(|s| s.split(',').map(|f| f.trim()).collect());
     let fields_slice = fields_vec.as_deref();
-    let format = get_format(query_m);
+    let format = get_format(query_m, df);
     let results =
         record::query_records_with_fields(conn, coll, where_clause, sort, limit, fields_slice)?;
     println!("{}", output::format_output(&results, &format)?);
@@ -446,6 +495,7 @@ fn handle_collection_update(
     coll: &Collection,
     collection_name: &str,
     update_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let id = get_id(update_m)?;
     let mut values = Vec::new();
@@ -463,7 +513,7 @@ fn handle_collection_update(
             "no fields to update".to_string(),
         ));
     }
-    let format = get_format(update_m);
+    let format = get_format(update_m, df);
     let result = record::update_record(conn, coll, id, &values, &clear_fields)?;
     println!("Updated record {id} in '{collection_name}'");
     println!("{}", output::format_single(&result, &format)?);
@@ -475,9 +525,10 @@ fn handle_collection_delete(
     coll: &Collection,
     collection_name: &str,
     delete_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let id = get_id(delete_m)?;
-    let format = get_format(delete_m);
+    let format = get_format(delete_m, df);
     let result = record::delete_record(conn, coll, id)?;
     println!("Deleted record {id} from '{collection_name}'");
     println!("{}", output::format_single(&result, &format)?);
@@ -488,12 +539,13 @@ fn handle_collection_search(
     conn: &Connection,
     coll: &Collection,
     search_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let query = get_arg(search_m, "query")?;
     let limit = search_m
         .get_one::<String>("limit")
         .and_then(|s| s.parse::<i64>().ok());
-    let format = get_format(search_m);
+    let format = get_format(search_m, df);
     let results = fts::search_records(conn, coll, query, limit)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
@@ -503,9 +555,10 @@ fn handle_collection_streak(
     conn: &Connection,
     coll: &Collection,
     streak_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let field = get_arg(streak_m, "field")?;
-    let format = get_format(streak_m);
+    let format = get_format(streak_m, df);
     let result = timeseries::streak(conn, coll, field)?;
     println!("{}", output::format_single(&result, &format)?);
     Ok(())
@@ -515,15 +568,18 @@ fn handle_collection_gaps(
     conn: &Connection,
     coll: &Collection,
     gaps_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let field = get_arg(gaps_m, "field")?;
     let raw_threshold = get_arg(gaps_m, "threshold")?;
-    let threshold: i64 = raw_threshold.parse().map_err(|_| LodgeError::InvalidValue {
-        field: "threshold".to_string(),
-        field_type: "int".to_string(),
-        value: raw_threshold.clone(),
-    })?;
-    let format = get_format(gaps_m);
+    let threshold: i64 = raw_threshold
+        .parse()
+        .map_err(|_| LodgeError::InvalidValue {
+            field: "threshold".to_string(),
+            field_type: "int".to_string(),
+            value: raw_threshold.clone(),
+        })?;
+    let format = get_format(gaps_m, df);
     let results = timeseries::gaps(conn, coll, field, threshold)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
@@ -533,6 +589,7 @@ fn handle_collection_rolling_avg(
     conn: &Connection,
     coll: &Collection,
     avg_m: &ArgMatches,
+    df: &str,
 ) -> error::Result<()> {
     let field = get_arg(avg_m, "field")?;
     let over = get_arg(avg_m, "over")?;
@@ -542,7 +599,7 @@ fn handle_collection_rolling_avg(
         field_type: "int".to_string(),
         value: raw_window.clone(),
     })?;
-    let format = get_format(avg_m);
+    let format = get_format(avg_m, df);
     let results = timeseries::rolling_average(conn, coll, field, over, window)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
@@ -578,17 +635,25 @@ DON'T USE LODGE FOR:
     );
 }
 
-fn handle_collection_schema(coll: &Collection, sub_m: &ArgMatches) -> error::Result<()> {
-    let fmt_str = sub_m
-        .get_one::<String>("format")
-        .map(|s| s.as_str())
-        .unwrap_or("json");
-    let format = output::Format::from_str(fmt_str)
-        .ok_or_else(|| LodgeError::Sql(format!("Unknown format: {fmt_str}")))?;
+fn handle_collection_schema(
+    conn: &Connection,
+    coll: &Collection,
+    sub_m: &ArgMatches,
+    df: &str,
+    settings: &Settings,
+) -> error::Result<()> {
+    let format = get_format(sub_m, df);
+    let threshold = settings.distinct_threshold;
     let fields: Vec<serde_json::Value> = coll
         .fields
         .iter()
-        .map(|f| serde_json::json!({"name": f.name, "type": f.field_type.as_str()}))
+        .map(|f| {
+            let mut field_json = serde_json::json!({"name": f.name, "type": f.field_type.as_str()});
+            if let Ok(Some(values)) = schema::load_distinct_values(conn, &coll.name, f, threshold) {
+                field_json["values"] = serde_json::json!(values);
+            }
+            field_json
+        })
         .collect();
     match format {
         output::Format::Json => {

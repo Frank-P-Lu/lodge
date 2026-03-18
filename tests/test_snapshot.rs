@@ -178,7 +178,12 @@ fn snapshot_restore_preserves_nulls() {
     let dir = common::setup();
     // Create collection with optional fields
     common::lodge_cmd(&dir)
-        .args(["create", "items", "--fields", "name:text, note:text, count:int"])
+        .args([
+            "create",
+            "items",
+            "--fields",
+            "name:text, note:text, count:int",
+        ])
         .assert()
         .success();
 
@@ -216,8 +221,16 @@ fn snapshot_restore_preserves_nulls() {
     let arr = json.as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["name"], "Alpha");
-    assert!(arr[0]["note"].is_null(), "note should be null, got: {}", arr[0]["note"]);
-    assert!(arr[0]["count"].is_null(), "count should be null, got: {}", arr[0]["count"]);
+    assert!(
+        arr[0]["note"].is_null(),
+        "note should be null, got: {}",
+        arr[0]["note"]
+    );
+    assert!(
+        arr[0]["count"].is_null(),
+        "count should be null, got: {}",
+        arr[0]["count"]
+    );
 
     // Also verify CSV output shows empty (not literal quotes or "")
     let out = common::lodge_cmd(&dir)

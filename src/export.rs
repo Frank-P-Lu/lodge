@@ -24,8 +24,9 @@ pub fn export_collection(conn: &Connection, name: &str, format: &Format) -> Resu
                 "fields": fields,
                 "records": records,
             });
-            serde_json::to_string_pretty(&envelope)
-                .map_err(|e| crate::error::LodgeError::Sql(format!("JSON serialization failed: {e}")))
+            serde_json::to_string_pretty(&envelope).map_err(|e| {
+                crate::error::LodgeError::Sql(format!("JSON serialization failed: {e}"))
+            })
         }
     }
 }

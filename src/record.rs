@@ -275,7 +275,14 @@ fn update_record_inner(
     conn.execute(&sql, all_params.as_slice())?;
 
     let after = get_record_by_id(conn, collection, id)?;
-    log_mutation(conn, &collection.name, "update", Some(id), Some(&before), Some(&after))?;
+    log_mutation(
+        conn,
+        &collection.name,
+        "update",
+        Some(id),
+        Some(&before),
+        Some(&after),
+    )?;
     Ok(after)
 }
 
@@ -298,7 +305,14 @@ fn delete_record_inner(conn: &Connection, collection: &Collection, id: i64) -> R
         return Err(LodgeError::RecordNotFound(id));
     }
 
-    log_mutation(conn, &collection.name, "delete", Some(id), Some(&record), None)?;
+    log_mutation(
+        conn,
+        &collection.name,
+        "delete",
+        Some(id),
+        Some(&record),
+        None,
+    )?;
     Ok(record)
 }
 

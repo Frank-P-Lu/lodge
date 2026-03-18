@@ -6,7 +6,10 @@ use predicates::prelude::*;
 fn init_creates_default_settings_file() {
     let dir = common::setup();
     let settings_path = dir.path().join(".lodge").join("settings.json");
-    assert!(settings_path.exists(), "settings.json should be created by init");
+    assert!(
+        settings_path.exists(),
+        "settings.json should be created by init"
+    );
     let content: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
     assert_eq!(content["default_format"], "json");
@@ -22,10 +25,7 @@ fn default_format_without_settings_file() {
         .assert()
         .success();
     // Default format is JSON
-    let output = common::lodge_cmd(&dir)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let output = common::lodge_cmd(&dir).args(["list"]).output().unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(json.is_array());
 }
@@ -43,13 +43,13 @@ fn set_and_read_default_format() {
         .assert()
         .success();
     // Now list should output table format (not JSON)
-    let output = common::lodge_cmd(&dir)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let output = common::lodge_cmd(&dir).args(["list"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Table format has dashes separator line
-    assert!(stdout.contains("---"), "Expected table format, got: {stdout}");
+    assert!(
+        stdout.contains("---"),
+        "Expected table format, got: {stdout}"
+    );
     // Should NOT be valid JSON
     assert!(serde_json::from_str::<serde_json::Value>(&stdout).is_err());
 }
@@ -81,7 +81,10 @@ fn set_distinct_threshold() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let fields = json["fields"].as_array().unwrap();
     let status_field = fields.iter().find(|f| f["name"] == "status").unwrap();
-    assert!(status_field.get("values").is_none(), "values should be hidden when above threshold");
+    assert!(
+        status_field.get("values").is_none(),
+        "values should be hidden when above threshold"
+    );
 }
 
 #[test]
@@ -102,7 +105,10 @@ fn cli_format_flag_overrides_setting() {
         .output()
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(json.is_array(), "Explicit --format json should override setting");
+    assert!(
+        json.is_array(),
+        "Explicit --format json should override setting"
+    );
 }
 
 #[test]
@@ -113,6 +119,29 @@ fn set_invalid_key_errors() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Unknown setting"));
+}
+
+#[test]
+fn settings_file_regenerated_on_read_if_missing() {
+    let dir = common::setup();
+    let settings_path = dir.path().join(".lodge").join("settings.json");
+    // Delete the settings file created by init
+    std::fs::remove_file(&settings_path).unwrap();
+    assert!(!settings_path.exists());
+    // Any command that reads settings should regenerate it
+    common::lodge_cmd(&dir)
+        .args(["create", "tasks", "--fields", "title:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir).args(["list"]).assert().success();
+    assert!(
+        settings_path.exists(),
+        "settings.json should be regenerated on read"
+    );
+    let content: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+    assert_eq!(content["default_format"], "json");
+    assert_eq!(content["distinct_threshold"], 15);
 }
 
 #[test]

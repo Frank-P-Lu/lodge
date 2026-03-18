@@ -2,11 +2,7 @@ use crate::error::Result;
 use rusqlite::Connection;
 use serde_json::Value;
 
-pub fn query_log(
-    conn: &Connection,
-    collection: Option<&str>,
-    limit: i64,
-) -> Result<Vec<Value>> {
+pub fn query_log(conn: &Connection, collection: Option<&str>, limit: i64) -> Result<Vec<Value>> {
     let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match collection {
         Some(c) => (
             "SELECT id, timestamp, collection, operation, record_id, success, error, before_data, after_data \

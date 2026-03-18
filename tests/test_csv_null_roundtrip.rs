@@ -48,7 +48,11 @@ fn csv_null_roundtrip_preserves_nulls() {
     let arr = json.as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["name"], "alpha");
-    assert!(arr[0]["note"].is_null(), "note should be null after CSV round-trip, got: {}", arr[0]["note"]);
+    assert!(
+        arr[0]["note"].is_null(),
+        "note should be null after CSV round-trip, got: {}",
+        arr[0]["note"]
+    );
 }
 
 /// The literal string "null" in a text field must survive a CSV round-trip
@@ -96,5 +100,8 @@ fn csv_roundtrip_preserves_literal_null_string() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let arr = json.as_array().unwrap();
     assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["note"], "null", "literal string 'null' should survive CSV round-trip");
+    assert_eq!(
+        arr[0]["note"], "null",
+        "literal string 'null' should survive CSV round-trip"
+    );
 }

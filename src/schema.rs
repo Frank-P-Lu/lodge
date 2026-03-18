@@ -54,6 +54,39 @@ pub fn load_collections(conn: &Connection) -> Result<Vec<Collection>> {
     Ok(collections)
 }
 
+/// Load distinct values for a text field if count <= threshold.
+/// Returns None for non-text fields, empty tables, or high-cardinality fields.
+pub fn load_distinct_values(
+    conn: &Connection,
+    collection: &str,
+    field: &Field,
+    threshold: usize,
+) -> Result<Option<Vec<String>>> {
+    if field.field_type != FieldType::Text {
+        return Ok(None);
+    }
+
+    let sql = format!(
+        "SELECT DISTINCT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL ORDER BY \"{}\" LIMIT {}",
+        field.name,
+        collection,
+        field.name,
+        field.name,
+        threshold + 1
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if rows.is_empty() || rows.len() > threshold {
+        Ok(None)
+    } else {
+        Ok(Some(rows))
+    }
+}
+
 /// Load a single collection by name.
 pub fn load_collection(conn: &Connection, name: &str) -> Result<Option<Collection>> {
     let mut stmt = conn.prepare(
@@ -64,10 +97,7 @@ pub fn load_collection(conn: &Connection, name: &str) -> Result<Option<Collectio
     )?;
 
     let rows = stmt.query_map([name], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-        ))
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
 
     let mut fields = Vec::new();

@@ -269,7 +269,10 @@ fn import_csv_quoted_fields() {
     assert_eq!(arr[1]["title"], "Task B");
     // Ensure no residual quote marks
     let title = arr[0]["title"].as_str().unwrap();
-    assert!(!title.contains('"'), "title should not contain quotes: {title}");
+    assert!(
+        !title.contains('"'),
+        "title should not contain quotes: {title}"
+    );
 }
 
 #[test]

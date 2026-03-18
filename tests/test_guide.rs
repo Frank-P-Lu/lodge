@@ -20,7 +20,9 @@ fn guide_includes_litmus_test() {
         .args(["guide"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Am I reading this whole file just to find one thing"));
+        .stdout(predicate::str::contains(
+            "Am I reading this whole file just to find one thing",
+        ));
 }
 
 #[test]

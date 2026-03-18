@@ -18,16 +18,14 @@ pub fn import_collection(conn: &Connection, name: &str, data: &str) -> crate::er
 }
 
 pub fn import_full(conn: &Connection, data: &str) -> crate::error::Result<Vec<(String, usize)>> {
-    let parsed: Value = serde_json::from_str(data)
-        .map_err(|e| LodgeError::ImportError(e.to_string()))?;
+    let parsed: Value =
+        serde_json::from_str(data).map_err(|e| LodgeError::ImportError(e.to_string()))?;
 
     let collections = parsed
         .get("collections")
         .and_then(|c| c.as_array())
         .ok_or_else(|| {
-            LodgeError::ImportError(
-                "expected 'collections' array in export envelope".to_string(),
-            )
+            LodgeError::ImportError("expected 'collections' array in export envelope".to_string())
         })?;
 
     let mut results = Vec::new();
@@ -36,9 +34,7 @@ pub fn import_full(conn: &Connection, data: &str) -> crate::error::Result<Vec<(S
         let coll_name = coll_data
             .get("collection")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                LodgeError::ImportError("missing 'collection' name".to_string())
-            })?;
+            .ok_or_else(|| LodgeError::ImportError("missing 'collection' name".to_string()))?;
 
         // Create collection if it doesn't exist
         let coll = if let Some(existing) = schema::load_collection(conn, coll_name)? {
@@ -77,9 +73,7 @@ pub fn import_full(conn: &Connection, data: &str) -> crate::error::Result<Vec<(S
             .get("records")
             .and_then(|r| r.as_array())
             .ok_or_else(|| {
-                LodgeError::ImportError(format!(
-                    "missing 'records' for collection '{coll_name}'"
-                ))
+                LodgeError::ImportError(format!("missing 'records' for collection '{coll_name}'"))
             })?;
 
         let count = import_json_array(conn, &coll, records)?;
@@ -89,7 +83,11 @@ pub fn import_full(conn: &Connection, data: &str) -> crate::error::Result<Vec<(S
     Ok(results)
 }
 
-fn import_json_records(conn: &Connection, coll: &Collection, parsed: &Value) -> crate::error::Result<usize> {
+fn import_json_records(
+    conn: &Connection,
+    coll: &Collection,
+    parsed: &Value,
+) -> crate::error::Result<usize> {
     // Accept either an array directly or an envelope with "records" key
     let records = if let Some(arr) = parsed.as_array() {
         arr.clone()
@@ -104,7 +102,11 @@ fn import_json_records(conn: &Connection, coll: &Collection, parsed: &Value) -> 
     import_json_array(conn, coll, &records)
 }
 
-fn import_json_array(conn: &Connection, coll: &Collection, records: &[Value]) -> crate::error::Result<usize> {
+fn import_json_array(
+    conn: &Connection,
+    coll: &Collection,
+    records: &[Value],
+) -> crate::error::Result<usize> {
     let mut count = 0;
     for record in records {
         let obj = record.as_object().ok_or_else(|| {
@@ -169,7 +171,11 @@ fn parse_csv_row(input: &str) -> Vec<String> {
     fields
 }
 
-fn import_csv_records(conn: &Connection, coll: &Collection, data: &str) -> crate::error::Result<usize> {
+fn import_csv_records(
+    conn: &Connection,
+    coll: &Collection,
+    data: &str,
+) -> crate::error::Result<usize> {
     let mut lines = data.lines();
     let header_line = lines
         .next()

@@ -19,10 +19,7 @@ fn setup_with_tasks() -> tempfile::TempDir {
 #[test]
 fn log_empty_by_default() {
     let dir = setup_with_tasks();
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     assert!(out.status.success());
     let json = common::parse_json_from_output(&out.stdout);
     assert_eq!(json, serde_json::json!([]));
@@ -32,14 +29,20 @@ fn log_empty_by_default() {
 fn log_records_add() {
     let dir = setup_with_tasks();
     common::lodge_cmd(&dir)
-        .args(["tasks", "add", "--title", "Test", "--done", "false", "--due", "2026-03-18"])
+        .args([
+            "tasks",
+            "add",
+            "--title",
+            "Test",
+            "--done",
+            "false",
+            "--due",
+            "2026-03-18",
+        ])
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     assert!(out.status.success());
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
@@ -64,10 +67,7 @@ fn log_records_update() {
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     // Most recent first: update, then add
@@ -90,10 +90,7 @@ fn log_records_delete() {
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     assert_eq!(entries[0]["operation"], "delete");
@@ -110,17 +107,17 @@ fn log_records_failed_add() {
         .assert()
         .failure();
 
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["operation"], "add");
     assert_eq!(entries[0]["success"], false);
     assert!(entries[0]["record_id"].is_null());
-    assert!(entries[0]["error"].as_str().unwrap().contains("Invalid value"));
+    assert!(entries[0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid value"));
 }
 
 #[test]
@@ -135,10 +132,7 @@ fn log_records_failed_update() {
         .assert()
         .failure();
 
-    let out = common::lodge_cmd(&dir)
-        .args(["log"])
-        .output()
-        .unwrap();
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     // Most recent first: failed update, then successful add
@@ -146,7 +140,10 @@ fn log_records_failed_update() {
     assert_eq!(entries[0]["operation"], "update");
     assert_eq!(entries[0]["success"], false);
     assert_eq!(entries[0]["record_id"], 1);
-    assert!(entries[0]["error"].as_str().unwrap().contains("Invalid value"));
+    assert!(entries[0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid value"));
 }
 
 #[test]
@@ -228,8 +225,14 @@ fn log_table_omits_before_after() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Table format should not include before/after columns (too wide with inline JSON)
-    assert!(!stdout.contains("before"), "table format should omit 'before' column");
-    assert!(!stdout.contains("after"), "table format should omit 'after' column");
+    assert!(
+        !stdout.contains("before"),
+        "table format should omit 'before' column"
+    );
+    assert!(
+        !stdout.contains("after"),
+        "table format should omit 'after' column"
+    );
     // But should still have the key columns
     assert!(stdout.contains("operation"));
     assert!(stdout.contains("collection"));
@@ -248,8 +251,14 @@ fn log_csv_omits_before_after() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!stdout.contains("before"), "csv format should omit 'before' column");
-    assert!(!stdout.contains("after"), "csv format should omit 'after' column");
+    assert!(
+        !stdout.contains("before"),
+        "csv format should omit 'before' column"
+    );
+    assert!(
+        !stdout.contains("after"),
+        "csv format should omit 'after' column"
+    );
     assert!(stdout.contains("operation"));
 }
 
