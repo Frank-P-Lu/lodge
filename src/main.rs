@@ -312,6 +312,22 @@ fn handle_log(cwd: &Path, sub_m: &ArgMatches) -> error::Result<()> {
         .unwrap_or(20);
     let format = get_format(sub_m);
     let results = log::query_log(&conn, collection, limit)?;
+    // Strip before/after from non-JSON formats — inline JSON makes table/csv too wide
+    let results = match format {
+        output::Format::Json => results,
+        _ => results
+            .into_iter()
+            .map(|v| {
+                if let serde_json::Value::Object(mut map) = v {
+                    map.remove("before");
+                    map.remove("after");
+                    serde_json::Value::Object(map)
+                } else {
+                    v
+                }
+            })
+            .collect(),
+    };
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
 }

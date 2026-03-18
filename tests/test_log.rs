@@ -215,6 +215,45 @@ fn log_format_flag() {
 }
 
 #[test]
+fn log_table_omits_before_after() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--format", "table"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Table format should not include before/after columns (too wide with inline JSON)
+    assert!(!stdout.contains("before"), "table format should omit 'before' column");
+    assert!(!stdout.contains("after"), "table format should omit 'after' column");
+    // But should still have the key columns
+    assert!(stdout.contains("operation"));
+    assert!(stdout.contains("collection"));
+}
+
+#[test]
+fn log_csv_omits_before_after() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--format", "csv"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("before"), "csv format should omit 'before' column");
+    assert!(!stdout.contains("after"), "csv format should omit 'after' column");
+    assert!(stdout.contains("operation"));
+}
+
+#[test]
 fn log_reserved_name() {
     let dir = common::setup();
     common::lodge_cmd(&dir)
