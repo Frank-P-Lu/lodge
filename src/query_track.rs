@@ -15,20 +15,16 @@ pub fn track_query(
     fingerprint: &str,
     threshold: i64,
 ) -> Result<TrackResult> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
 
-    conn.execute(
+    let (call_count, suggested): (i64, i64) = conn.query_row(
         "INSERT INTO _lodge_query_log (query_type, collection, fingerprint, call_count, last_used)
          VALUES (?1, ?2, ?3, 1, ?4)
          ON CONFLICT(fingerprint) DO UPDATE SET
            call_count = call_count + 1,
-           last_used = ?4",
+           last_used = ?4
+         RETURNING call_count, suggested",
         rusqlite::params![query_type, collection, fingerprint, now],
-    )?;
-
-    let (call_count, suggested): (i64, i64) = conn.query_row(
-        "SELECT call_count, suggested FROM _lodge_query_log WHERE fingerprint = ?1",
-        [fingerprint],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 

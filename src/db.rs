@@ -33,6 +33,7 @@ pub fn init(dir: &Path) -> Result<()> {
     create_fts_meta_table(&conn)?;
     create_log_table(&conn)?;
     create_query_log_table(&conn)?;
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }
 
@@ -41,22 +42,31 @@ pub fn lodge_dir(start: &Path) -> Result<PathBuf> {
     find_lodge_dir(start).ok_or(LodgeError::NotInitialized)
 }
 
+const SCHEMA_VERSION: i64 = 1;
+
 /// Open an existing lodge database, searching up from `start`.
 pub fn open(start: &Path) -> Result<Connection> {
     let lodge_dir = find_lodge_dir(start).ok_or(LodgeError::NotInitialized)?;
     let db_path = lodge_dir.join(DB_FILE);
     let conn = Connection::open(db_path)?;
-    // Migrate: ensure _lodge_views exists for older databases
-    create_views_table(&conn)?;
-    // Migrate: add description column to views for older databases
-    migrate_views_description(&conn)?;
-    // Migrate: ensure _lodge_fts_meta exists for older databases
-    create_fts_meta_table(&conn)?;
-    // Migrate: ensure _lodge_log exists for older databases
-    create_log_table(&conn)?;
-    // Migrate: ensure _lodge_query_log exists for older databases
-    create_query_log_table(&conn)?;
+    run_migrations(&conn)?;
     Ok(conn)
+}
+
+fn run_migrations(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap_or(0);
+    if version >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    create_views_table(conn)?;
+    migrate_views_description(conn)?;
+    create_fts_meta_table(conn)?;
+    create_log_table(conn)?;
+    create_query_log_table(conn)?;
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(())
 }
 
 fn create_meta_table(conn: &Connection) -> Result<()> {

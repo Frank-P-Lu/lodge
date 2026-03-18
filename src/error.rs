@@ -78,6 +78,12 @@ pub enum LodgeError {
     #[error("{0}")]
     InvalidInput(String),
 
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("Invalid setting: {0}")]
+    InvalidSetting(String),
+
     #[error("SQL error: {0}")]
     Sql(String),
 

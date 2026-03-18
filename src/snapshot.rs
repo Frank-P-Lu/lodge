@@ -51,7 +51,7 @@ pub fn create_snapshot(
 
     let snapshot = json!({
         "lodge_version": 1,
-        "created_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
+        "created_at": crate::types::now_timestamp(),
         "collections": colls_json,
     });
 

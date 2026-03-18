@@ -54,37 +54,82 @@ pub fn load_collections(conn: &Connection) -> Result<Vec<Collection>> {
     Ok(collections)
 }
 
-/// Load distinct values for a text field if count <= threshold.
-/// Returns None for non-text fields, empty tables, or high-cardinality fields.
-pub fn load_distinct_values(
+/// Load distinct values for all text fields in a collection in one pass.
+/// Returns a map from field name to distinct values.
+/// A field's values are shown only when:
+/// - the distinct count is <= `max_distinct`, AND
+/// - the distinct count / total rows <= `ratio`
+pub fn load_all_distinct_values(
     conn: &Connection,
     collection: &str,
-    field: &Field,
-    threshold: usize,
-) -> Result<Option<Vec<String>>> {
-    if field.field_type != FieldType::Text {
-        return Ok(None);
-    }
-
-    let sql = format!(
-        "SELECT DISTINCT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL ORDER BY \"{}\" LIMIT {}",
-        field.name,
-        collection,
-        field.name,
-        field.name,
-        threshold + 1
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
+    fields: &[Field],
+    max_distinct: usize,
+    ratio: f64,
+) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    let text_fields: Vec<&Field> = fields
+        .iter()
+        .filter(|f| f.field_type == FieldType::Text)
         .collect();
 
-    if rows.is_empty() || rows.len() > threshold {
-        Ok(None)
-    } else {
-        Ok(Some(rows))
+    if text_fields.is_empty() {
+        return Ok(std::collections::HashMap::new());
     }
+
+    // Get total row count for ratio calculation
+    let total_rows: usize = conn.query_row(
+        &format!("SELECT COUNT(*) FROM \"{}\"", collection),
+        [],
+        |row| row.get(0),
+    )?;
+
+    if total_rows == 0 {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Build a compound query that returns (field_name, value) pairs.
+    let subqueries: Vec<String> = text_fields
+        .iter()
+        .map(|f| {
+            format!(
+                "SELECT '{name}' AS _field, \"{name}\" AS _val FROM \"{coll}\" \
+                 WHERE \"{name}\" IS NOT NULL GROUP BY \"{name}\" LIMIT {lim}",
+                name = f.name,
+                coll = collection,
+                lim = max_distinct + 1,
+            )
+        })
+        .collect();
+
+    let sql = subqueries
+        .iter()
+        .map(|sq| format!("SELECT * FROM ({sq})"))
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (field_name, value) = row?;
+        map.entry(field_name).or_default().push(value);
+    }
+
+    // Remove fields that exceed max or ratio, and sort values
+    map.retain(|_, values| {
+        if values.is_empty() || values.len() > max_distinct {
+            return false;
+        }
+        let field_ratio = values.len() as f64 / total_rows as f64;
+        field_ratio <= ratio
+    });
+    for values in map.values_mut() {
+        values.sort();
+    }
+
+    Ok(map)
 }
 
 /// Load a single collection by name.

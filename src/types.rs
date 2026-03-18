@@ -154,3 +154,10 @@ pub fn parse_fields(spec: &str) -> Result<Vec<(String, FieldType)>> {
     }
     Ok(fields)
 }
+
+/// Return the current UTC timestamp in ISO 8601 format (no timezone suffix).
+pub fn now_timestamp() -> String {
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string()
+}

@@ -13,7 +13,8 @@ fn init_creates_default_settings_file() {
     let content: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
     assert_eq!(content["default_format"], "json");
-    assert_eq!(content["distinct_threshold"], 15);
+    assert_eq!(content["distinct_max"], 20);
+    assert_eq!(content["distinct_ratio"], 0.5);
 }
 
 #[test]
@@ -55,25 +56,26 @@ fn set_and_read_default_format() {
 }
 
 #[test]
-fn set_distinct_threshold() {
+fn set_distinct_ratio_hides_values() {
     let dir = common::setup();
     common::lodge_cmd(&dir)
         .args(["create", "items", "--fields", "status:text"])
         .assert()
         .success();
-    // Add 3 distinct values
-    for val in &["open", "closed", "pending"] {
-        common::lodge_cmd(&dir)
-            .args(["items", "add", "--status", val])
-            .assert()
-            .success();
+    // 3 unique values across 30 rows = 10% ratio
+    for _ in 0..10 {
+        for val in &["open", "closed", "pending"] {
+            common::lodge_cmd(&dir)
+                .args(["items", "add", "--status", val])
+                .assert()
+                .success();
+        }
     }
-    // Set threshold to 2 (below distinct count of 3)
+    // Set ratio to 0.05 (5%) — 10% exceeds it, so values should be hidden
     common::lodge_cmd(&dir)
-        .args(["set", "distinct_threshold", "2"])
+        .args(["set", "distinct_ratio", "0.05"])
         .assert()
         .success();
-    // Schema should NOT show values (3 > threshold 2)
     let output = common::lodge_cmd(&dir)
         .args(["items", "schema"])
         .output()
@@ -83,7 +85,7 @@ fn set_distinct_threshold() {
     let status_field = fields.iter().find(|f| f["name"] == "status").unwrap();
     assert!(
         status_field.get("values").is_none(),
-        "values should be hidden when above threshold"
+        "values should be hidden when ratio exceeds distinct_ratio setting"
     );
 }
 
@@ -141,7 +143,29 @@ fn settings_file_regenerated_on_read_if_missing() {
     let content: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
     assert_eq!(content["default_format"], "json");
-    assert_eq!(content["distinct_threshold"], 15);
+    assert_eq!(content["distinct_max"], 20);
+    assert_eq!(content["distinct_ratio"], 0.5);
+}
+
+#[test]
+fn set_setting_includes_view_suggest_threshold_when_file_missing() {
+    let dir = common::setup();
+    let settings_path = dir.path().join(".lodge").join("settings.json");
+    // Delete the settings file so set_setting must create it from scratch
+    std::fs::remove_file(&settings_path).unwrap();
+    assert!(!settings_path.exists());
+    // Change one setting — this triggers the "create from defaults" path
+    common::lodge_cmd(&dir)
+        .args(["set", "default_format", "table"])
+        .assert()
+        .success();
+    // The newly created settings file should contain view_suggest_threshold
+    let content: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+    assert_eq!(
+        content["view_suggest_threshold"], 3,
+        "view_suggest_threshold should be present with default value after set_setting creates file"
+    );
 }
 
 #[test]

@@ -12,6 +12,42 @@ struct View {
     limit: Option<i64>,
 }
 
+struct ViewRow {
+    name: String,
+    collection: String,
+    where_clause: Option<String>,
+    sort: Option<String>,
+    limit: Option<i64>,
+    created_at: String,
+    description: Option<String>,
+}
+
+impl ViewRow {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            name: row.get(0)?,
+            collection: row.get(1)?,
+            where_clause: row.get(2)?,
+            sort: row.get(3)?,
+            limit: row.get(4)?,
+            created_at: row.get(5)?,
+            description: row.get(6)?,
+        })
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "name": self.name,
+            "collection": self.collection,
+            "where": self.where_clause,
+            "sort": self.sort,
+            "limit": self.limit,
+            "created_at": self.created_at,
+            "description": self.description,
+        })
+    }
+}
+
 fn view_exists(conn: &Connection, name: &str) -> Result<bool> {
     let exists: bool = conn.query_row(
         "SELECT COUNT(*) > 0 FROM _lodge_views WHERE name = ?1",
@@ -46,7 +82,7 @@ pub fn create_view(
         return Err(LodgeError::ViewExists(name.to_string()));
     }
 
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
     conn.execute(
         "INSERT INTO _lodge_views (name, collection, where_clause, sort, lim, created_at, description) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![name, collection, where_clause, sort, limit, now, description],
@@ -59,56 +95,24 @@ pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
     let mut stmt = conn.prepare(
         "SELECT name, collection, where_clause, sort, lim, created_at, description FROM _lodge_views ORDER BY name",
     )?;
-    let rows = stmt.query_map([], |row| {
-        let name: String = row.get(0)?;
-        let collection: String = row.get(1)?;
-        let where_clause: Option<String> = row.get(2)?;
-        let sort: Option<String> = row.get(3)?;
-        let limit: Option<i64> = row.get(4)?;
-        let created_at: String = row.get(5)?;
-        let description: Option<String> = row.get(6)?;
-        Ok(json!({
-            "name": name,
-            "collection": collection,
-            "where": where_clause,
-            "sort": sort,
-            "limit": limit,
-            "created_at": created_at,
-            "description": description,
-        }))
-    })?;
+    let rows = stmt.query_map([], |row| ViewRow::from_row(row))?;
 
     let mut results = Vec::new();
     for row in rows {
-        results.push(row?);
+        results.push(row?.to_json());
     }
     Ok(results)
 }
 
 pub fn show_view(conn: &Connection, name: &str) -> Result<Value> {
-    conn.query_row(
-        "SELECT name, collection, where_clause, sort, lim, created_at, description FROM _lodge_views WHERE name = ?1",
-        [name],
-        |row| {
-            let vname: String = row.get(0)?;
-            let collection: String = row.get(1)?;
-            let where_clause: Option<String> = row.get(2)?;
-            let sort: Option<String> = row.get(3)?;
-            let limit: Option<i64> = row.get(4)?;
-            let created_at: String = row.get(5)?;
-            let description: Option<String> = row.get(6)?;
-            Ok(json!({
-                "name": vname,
-                "collection": collection,
-                "where": where_clause,
-                "sort": sort,
-                "limit": limit,
-                "created_at": created_at,
-                "description": description,
-            }))
-        },
-    )
-    .map_err(|_| LodgeError::ViewNotFound(name.to_string()))
+    let view_row = conn
+        .query_row(
+            "SELECT name, collection, where_clause, sort, lim, created_at, description FROM _lodge_views WHERE name = ?1",
+            [name],
+            |row| ViewRow::from_row(row),
+        )
+        .map_err(|_| LodgeError::ViewNotFound(name.to_string()))?;
+    Ok(view_row.to_json())
 }
 
 pub fn update_view(
@@ -119,6 +123,12 @@ pub fn update_view(
     limit: Option<i64>,
     description: Option<&str>,
 ) -> Result<()> {
+    if where_clause.is_none() && sort.is_none() && limit.is_none() && description.is_none() {
+        return Err(LodgeError::InvalidInput(
+            "Nothing to update — provide at least one of --where, --sort, --limit, or --description".to_string(),
+        ));
+    }
+
     let mut sets = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 

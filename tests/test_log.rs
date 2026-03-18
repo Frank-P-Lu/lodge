@@ -522,6 +522,77 @@ fn log_since_invalid_date_errors() {
 }
 
 #[test]
+fn log_summary_uses_text_not_date_like_string() {
+    // A text field value like "abcd-efghi" (10 chars, '-' at pos 4) should NOT be
+    // skipped by the date heuristic — it should appear in the summary.
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["create", "items", "--fields", "code:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["items", "add", "--code", "abcd-efghi"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert_eq!(
+        summary, "added items: abcd-efghi",
+        "non-date text should appear in summary: {summary}"
+    );
+}
+
+#[test]
+fn log_verbose_table_preserves_before_after() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose", "--format", "table"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // When --verbose is passed, table format should include before/after columns
+    assert!(
+        stdout.contains("before"),
+        "verbose table should include 'before' column, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("after"),
+        "verbose table should include 'after' column, got: {stdout}"
+    );
+}
+
+#[test]
+fn log_verbose_csv_preserves_before_after() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose", "--format", "csv"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("before"),
+        "verbose csv should include 'before' column, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("after"),
+        "verbose csv should include 'after' column, got: {stdout}"
+    );
+}
+
+#[test]
 fn log_reserved_name() {
     let dir = common::setup();
     common::lodge_cmd(&dir)

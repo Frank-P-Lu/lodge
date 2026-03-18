@@ -12,7 +12,7 @@ fn log_mutation(
     before: Option<&Value>,
     after: Option<&Value>,
 ) -> Result<()> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
     conn.execute(
         "INSERT INTO _lodge_log (timestamp, collection, operation, record_id, success, before_data, after_data)
          VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
@@ -35,7 +35,7 @@ fn log_failure(
     record_id: Option<i64>,
     error: &str,
 ) -> Result<()> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
     conn.execute(
         "INSERT INTO _lodge_log (timestamp, collection, operation, record_id, success, error)
          VALUES (?1, ?2, ?3, ?4, 0, ?5)",
@@ -79,7 +79,7 @@ fn add_record_inner(
     collection: &Collection,
     values: &[(String, String)],
 ) -> Result<Value> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
 
     // Validate and collect field values
     let mut field_names = Vec::new();
@@ -218,7 +218,7 @@ fn update_record_inner(
     // Get before state (also validates existence)
     let before = get_record_by_id(conn, collection, id)?;
 
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = crate::types::now_timestamp();
 
     let mut set_clauses = Vec::new();
     let mut params: Vec<String> = Vec::new();

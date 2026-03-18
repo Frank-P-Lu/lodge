@@ -25,6 +25,29 @@ use settings::Settings;
 use std::path::Path;
 use std::process;
 
+fn fields_to_json(
+    conn: &Connection,
+    collection_name: &str,
+    fields: &[schema::Field],
+    max_distinct: usize,
+    ratio: f64,
+) -> Vec<serde_json::Value> {
+    let distinct_map =
+        schema::load_all_distinct_values(conn, collection_name, fields, max_distinct, ratio)
+            .unwrap_or_default();
+    fields
+        .iter()
+        .map(|f| {
+            let mut field_json =
+                serde_json::json!({"name": f.name, "type": f.field_type.as_str()});
+            if let Some(values) = distinct_map.get(&f.name) {
+                field_json["values"] = serde_json::json!(values);
+            }
+            field_json
+        })
+        .collect()
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
@@ -355,24 +378,16 @@ fn handle_log(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
         .unwrap_or(20);
     let verbose = sub_m.get_flag("verbose");
     let since = sub_m.get_one::<String>("since").map(|s| s.as_str());
-    // Validate --since format
     if let Some(s) = since {
-        let valid = if s.contains('T') {
-            chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
-        } else {
-            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
-        };
-        if !valid {
-            return Err(error::LodgeError::InvalidInput(
-                "Invalid --since value. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS".to_string(),
-            ));
-        }
+        log::validate_since(s)?;
     }
     let format = get_format(sub_m, df);
     let results = log::query_log(&conn, collection, limit, verbose, since)?;
     // Strip before/after from non-JSON formats — inline JSON makes table/csv too wide
+    // But preserve them when --verbose is explicitly requested
     let results = match format {
         output::Format::Json => results,
+        _ if verbose => results,
         _ => results
             .into_iter()
             .map(|v| {
@@ -394,24 +409,12 @@ fn handle_list(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) ->
     let conn = db::open(cwd)?;
     let format = get_format(sub_m, df);
     let colls = schema::load_collections(&conn)?;
-    let threshold = settings.distinct_threshold;
+    let max_distinct = settings.distinct_max;
+    let ratio = settings.distinct_ratio;
     let result: Vec<serde_json::Value> = colls
         .iter()
         .map(|c| {
-            let fields: Vec<serde_json::Value> = c
-                .fields
-                .iter()
-                .map(|f| {
-                    let mut field_json =
-                        serde_json::json!({"name": f.name, "type": f.field_type.as_str()});
-                    if let Ok(Some(values)) =
-                        schema::load_distinct_values(&conn, &c.name, f, threshold)
-                    {
-                        field_json["values"] = serde_json::json!(values);
-                    }
-                    field_json
-                })
-                .collect();
+            let fields = fields_to_json(&conn, &c.name, &c.fields, max_distinct, ratio);
             serde_json::json!({"name": c.name, "fields": fields})
         })
         .collect();
@@ -727,18 +730,9 @@ fn handle_collection_schema(
     settings: &Settings,
 ) -> error::Result<()> {
     let format = get_format(sub_m, df);
-    let threshold = settings.distinct_threshold;
-    let fields: Vec<serde_json::Value> = coll
-        .fields
-        .iter()
-        .map(|f| {
-            let mut field_json = serde_json::json!({"name": f.name, "type": f.field_type.as_str()});
-            if let Ok(Some(values)) = schema::load_distinct_values(conn, &coll.name, f, threshold) {
-                field_json["values"] = serde_json::json!(values);
-            }
-            field_json
-        })
-        .collect();
+    let max_distinct = settings.distinct_max;
+    let ratio = settings.distinct_ratio;
+    let fields = fields_to_json(conn, &coll.name, &coll.fields, max_distinct, ratio);
     match format {
         output::Format::Json => {
             let out = serde_json::json!({
@@ -746,7 +740,7 @@ fn handle_collection_schema(
                 "fields": fields,
             });
             let json = serde_json::to_string_pretty(&out)
-                .map_err(|e| LodgeError::Sql(format!("JSON serialization failed: {e}")))?;
+                .map_err(|e| LodgeError::Serialization(e.to_string()))?;
             println!("{json}");
         }
         _ => println!("{}", output::format_output(&fields, &format)?),

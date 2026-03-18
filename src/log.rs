@@ -1,6 +1,21 @@
-use crate::error::Result;
+use crate::error::{LodgeError, Result};
 use rusqlite::Connection;
 use serde_json::Value;
+
+/// Validate a --since timestamp string. Accepts YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.
+pub fn validate_since(s: &str) -> Result<()> {
+    let valid = if s.contains('T') {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
+    } else {
+        chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
+    };
+    if !valid {
+        return Err(LodgeError::InvalidInput(
+            "Invalid --since value. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 fn build_summary(
     operation: &str,
@@ -68,9 +83,17 @@ fn first_text_value(v: &Value) -> Option<String> {
             continue;
         }
         if let Some(s) = val.as_str() {
-            // Skip date/datetime-looking values
-            if s.len() == 10 && s.chars().nth(4) == Some('-') {
-                continue;
+            // Skip date-looking values (YYYY-MM-DD): verify digits around the dashes
+            if s.len() == 10 {
+                let b = s.as_bytes();
+                if b[4] == b'-'
+                    && b[7] == b'-'
+                    && b[..4].iter().all(|c| c.is_ascii_digit())
+                    && b[5..7].iter().all(|c| c.is_ascii_digit())
+                    && b[8..10].iter().all(|c| c.is_ascii_digit())
+                {
+                    continue;
+                }
             }
             if s.contains('T') && s.contains(':') {
                 continue;
@@ -89,14 +112,9 @@ fn diff_fields(before_data: Option<&str>, after_data: Option<&str>) -> String {
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(Value::Null);
 
-    let before_obj = before.as_object();
-    let after_obj = after.as_object();
-
-    if before_obj.is_none() || after_obj.is_none() {
+    let (Some(before_obj), Some(after_obj)) = (before.as_object(), after.as_object()) else {
         return String::new();
-    }
-    let before_obj = before_obj.unwrap();
-    let after_obj = after_obj.unwrap();
+    };
 
     let mut changes = Vec::new();
     for (key, new_val) in after_obj {
@@ -137,12 +155,9 @@ pub fn query_log(
 ) -> Result<Vec<Value>> {
     let mut conditions = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    let mut idx = 1;
-
     if let Some(c) = collection {
-        conditions.push(format!("collection = ?{idx}"));
+        conditions.push(format!("collection = ?{}", params.len() + 1));
         params.push(Box::new(c.to_string()));
-        idx += 1;
     }
 
     if let Some(s) = since {
@@ -152,9 +167,8 @@ pub fn query_log(
         } else {
             format!("{s}T00:00:00")
         };
-        conditions.push(format!("timestamp >= ?{idx}"));
+        conditions.push(format!("timestamp >= ?{}", params.len() + 1));
         params.push(Box::new(since_ts));
-        idx += 1;
     }
 
     let where_clause = if conditions.is_empty() {
@@ -163,12 +177,12 @@ pub fn query_log(
         format!(" WHERE {}", conditions.join(" AND "))
     };
 
+    params.push(Box::new(limit));
     let sql = format!(
         "SELECT id, timestamp, collection, operation, record_id, success, error, before_data, after_data \
-         FROM _lodge_log{where_clause} ORDER BY id DESC LIMIT ?{idx}"
+         FROM _lodge_log{where_clause} ORDER BY id DESC LIMIT ?{}",
+        params.len()
     );
-    params.push(Box::new(limit));
-    let _ = idx;
 
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 

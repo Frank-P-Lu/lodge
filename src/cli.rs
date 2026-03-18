@@ -291,7 +291,7 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                 .arg(
                     Arg::new("key")
                         .required(true)
-                        .help("Setting name (default_format, distinct_threshold)"),
+                        .help("Setting name (default_format, distinct_max, distinct_ratio, view_suggest_threshold)"),
                 )
                 .arg(
                     Arg::new("value")
