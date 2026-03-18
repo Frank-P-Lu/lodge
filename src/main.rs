@@ -73,6 +73,10 @@ fn run() -> error::Result<()> {
             println!("Initialized lodge database in .lodge/");
             Ok(())
         }
+        Some(("guide", _)) => {
+            print_guide();
+            Ok(())
+        }
         Some(("create", sub_m)) => handle_create(&cwd, sub_m),
         Some(("alter", sub_m)) => handle_alter(&cwd, sub_m),
         Some(("sql", sub_m)) => handle_sql(&cwd, sub_m),
@@ -542,6 +546,36 @@ fn handle_collection_rolling_avg(
     let results = timeseries::rolling_average(conn, coll, field, over, window)?;
     println!("{}", output::format_output(&results, &format)?);
     Ok(())
+}
+
+fn print_guide() {
+    println!(
+        "\
+Lodge is for data you ACT on. Markdown is for context you READ.
+
+USE LODGE WHEN YOU HAVE:
+  - Multiple records of the same type
+  - You need to filter, sort, or search across them
+  - You update individual records frequently
+  - Examples: tasks, habits, logs, contacts, inventory
+
+USE FILES WHEN:
+  - The content is mostly narrative or prose
+  - There are few instances (one project doc, one person profile)
+  - You read the whole thing when you need it
+  - The structure is loose or evolving
+
+LITMUS TEST:
+  \"Am I reading this whole file just to find one thing?\"
+    -> It should probably be a collection.
+  \"Am I reading this file because I need all of it?\"
+    -> It's fine as a file.
+
+DON'T USE LODGE FOR:
+  - Config or settings (single document, read whole)
+  - Fewer than ~3 records of a type
+  - Free-form notes with no consistent structure"
+    );
 }
 
 fn handle_collection_schema(coll: &Collection, sub_m: &ArgMatches) -> error::Result<()> {

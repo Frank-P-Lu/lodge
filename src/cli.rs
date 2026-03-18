@@ -16,11 +16,14 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
     };
 
     let mut cmd = Command::new("lodge")
-        .about("A local SQLite database with dynamically generated subcommands for AI agents")
+        .about("A local SQLite database with dynamically generated subcommands for AI agents. Run 'lodge guide' to learn when to use Lodge vs files.")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
             Command::new("init").about("Initialize a new lodge database in the current directory"),
+        )
+        .subcommand(
+            Command::new("guide").about("When to use Lodge vs files — a decision framework for agents"),
         )
         .subcommand(
             Command::new("create")

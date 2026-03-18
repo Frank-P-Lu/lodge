@@ -3,8 +3,8 @@ use crate::types::parse_fields;
 use rusqlite::Connection;
 
 const RESERVED_NAMES: &[&str] = &[
-    "init", "create", "alter", "sql", "help", "view", "export", "import", "snapshot", "restore",
-    "run", "list", "log",
+    "init", "create", "alter", "sql", "help", "guide", "view", "export", "import", "snapshot",
+    "restore", "run", "list", "log",
 ];
 
 /// Check whether a collection exists in the database.
