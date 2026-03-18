@@ -106,6 +106,11 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                             Arg::new("limit")
                                 .long("limit")
                                 .help("Maximum number of records"),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .help("Description of what this view represents"),
                         ),
                 )
                 .subcommand(
@@ -141,9 +146,14 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                                 .long("limit")
                                 .help("New maximum number of records"),
                         )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .help("New description for the view"),
+                        )
                         .group(
                             clap::ArgGroup::new("update_fields")
-                                .args(["where", "sort", "limit"])
+                                .args(["where", "sort", "limit", "description"])
                                 .required(true)
                                 .multiple(true),
                         ),
@@ -252,6 +262,12 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .long("format")
                         .default_value("json")
                         .help("Output format: json, table, csv"),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .long("verbose")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Show full before/after data for each entry"),
                 ),
         )
         .subcommand(

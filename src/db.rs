@@ -32,6 +32,7 @@ pub fn init(dir: &Path) -> Result<()> {
     create_views_table(&conn)?;
     create_fts_meta_table(&conn)?;
     create_log_table(&conn)?;
+    create_query_log_table(&conn)?;
     Ok(())
 }
 
@@ -47,10 +48,14 @@ pub fn open(start: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     // Migrate: ensure _lodge_views exists for older databases
     create_views_table(&conn)?;
+    // Migrate: add description column to views for older databases
+    migrate_views_description(&conn)?;
     // Migrate: ensure _lodge_fts_meta exists for older databases
     create_fts_meta_table(&conn)?;
     // Migrate: ensure _lodge_log exists for older databases
     create_log_table(&conn)?;
+    // Migrate: ensure _lodge_query_log exists for older databases
+    create_query_log_table(&conn)?;
     Ok(conn)
 }
 
@@ -95,6 +100,21 @@ fn create_log_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn create_query_log_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _lodge_query_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_type TEXT NOT NULL,
+            collection TEXT NOT NULL,
+            fingerprint TEXT NOT NULL UNIQUE,
+            call_count INTEGER NOT NULL DEFAULT 1,
+            last_used TEXT NOT NULL,
+            suggested INTEGER NOT NULL DEFAULT 0
+        );",
+    )?;
+    Ok(())
+}
+
 fn create_views_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _lodge_views (
@@ -103,8 +123,15 @@ fn create_views_table(conn: &Connection) -> Result<()> {
             where_clause TEXT,
             sort       TEXT,
             lim        INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            description TEXT
         );",
     )?;
+    Ok(())
+}
+
+fn migrate_views_description(conn: &Connection) -> Result<()> {
+    // Attempt to add description column; ignore error if it already exists
+    let _ = conn.execute_batch("ALTER TABLE _lodge_views ADD COLUMN description TEXT");
     Ok(())
 }

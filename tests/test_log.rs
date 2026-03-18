@@ -42,7 +42,10 @@ fn log_records_add() {
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose"])
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
@@ -67,7 +70,10 @@ fn log_records_update() {
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose"])
+        .output()
+        .unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     // Most recent first: update, then add
@@ -90,7 +96,10 @@ fn log_records_delete() {
         .assert()
         .success();
 
-    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose"])
+        .output()
+        .unwrap();
     let json = common::parse_json_from_output(&out.stdout);
     let entries = json.as_array().unwrap();
     assert_eq!(entries[0]["operation"], "delete");
@@ -260,6 +269,157 @@ fn log_csv_omits_before_after() {
         "csv format should omit 'after' column"
     );
     assert!(stdout.contains("operation"));
+}
+
+#[test]
+fn log_default_slim_output() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    // Slim output should have summary but NOT before/after
+    assert!(
+        entries[0].get("summary").is_some(),
+        "default log should include 'summary' field"
+    );
+    assert!(
+        entries[0].get("before").is_none(),
+        "default log should not include 'before' field"
+    );
+    assert!(
+        entries[0].get("after").is_none(),
+        "default log should not include 'after' field"
+    );
+}
+
+#[test]
+fn log_verbose_includes_before_after() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir)
+        .args(["log", "--verbose"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    assert!(
+        entries[0].get("before").is_some(),
+        "verbose log should include 'before' field"
+    );
+    assert!(
+        entries[0].get("after").is_some(),
+        "verbose log should include 'after' field"
+    );
+}
+
+#[test]
+fn log_summary_add() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert_eq!(summary, "added tasks: Test");
+}
+
+#[test]
+fn log_summary_add_no_text() {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["create", "counts", "--fields", "val:int"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["counts", "add", "--val", "42"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert_eq!(summary, "added counts #1");
+}
+
+#[test]
+fn log_summary_update() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Test", "--done", "false"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "update", "1", "--done", "true"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    // Most recent first
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert!(
+        summary.contains("updated tasks #1"),
+        "summary should mention updated collection and id: {summary}"
+    );
+    assert!(
+        summary.contains("done"),
+        "summary should mention changed field: {summary}"
+    );
+}
+
+#[test]
+fn log_summary_delete() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Bye"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "delete", "1"])
+        .assert()
+        .success();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert_eq!(summary, "deleted tasks #1: Bye");
+}
+
+#[test]
+fn log_summary_failed() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "Bad", "--due", "not-a-date"])
+        .assert()
+        .failure();
+
+    let out = common::lodge_cmd(&dir).args(["log"]).output().unwrap();
+    let json = common::parse_json_from_output(&out.stdout);
+    let entries = json.as_array().unwrap();
+    let summary = entries[0]["summary"].as_str().unwrap();
+    assert!(
+        summary.starts_with("failed add on tasks:"),
+        "failed summary should start with 'failed add on tasks:': {summary}"
+    );
 }
 
 #[test]

@@ -4,11 +4,16 @@ use std::path::Path;
 const SETTINGS_FILE: &str = "settings.json";
 
 const VALID_FORMATS: &[&str] = &["json", "table", "csv"];
-const VALID_KEYS: &[&str] = &["default_format", "distinct_threshold"];
+const VALID_KEYS: &[&str] = &[
+    "default_format",
+    "distinct_threshold",
+    "view_suggest_threshold",
+];
 
 pub struct Settings {
     pub default_format: String,
     pub distinct_threshold: usize,
+    pub view_suggest_threshold: i64,
 }
 
 impl Default for Settings {
@@ -16,6 +21,7 @@ impl Default for Settings {
         Self {
             default_format: "json".to_string(),
             distinct_threshold: 15,
+            view_suggest_threshold: 3,
         }
     }
 }
@@ -50,6 +56,10 @@ pub fn load_settings(lodge_dir: &Path) -> Settings {
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(defaults.distinct_threshold),
+        view_suggest_threshold: parsed
+            .get("view_suggest_threshold")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(defaults.view_suggest_threshold),
     }
 }
 
@@ -61,6 +71,7 @@ pub fn create_default_settings(lodge_dir: &Path) -> Result<()> {
         let json = serde_json::json!({
             "default_format": defaults.default_format,
             "distinct_threshold": defaults.distinct_threshold,
+            "view_suggest_threshold": defaults.view_suggest_threshold,
         });
         let content =
             serde_json::to_string_pretty(&json).map_err(|e| LodgeError::Sql(e.to_string()))?;
@@ -97,6 +108,21 @@ pub fn set_setting(lodge_dir: &Path, key: &str, value: &str) -> Result<()> {
                 field_type: "int".to_string(),
                 value: value.to_string(),
             })?;
+            serde_json::Value::Number(serde_json::Number::from(n))
+        }
+        "view_suggest_threshold" => {
+            let n: i64 = value.parse().map_err(|_| LodgeError::InvalidValue {
+                field: key.to_string(),
+                field_type: "int".to_string(),
+                value: value.to_string(),
+            })?;
+            if n < 1 {
+                return Err(LodgeError::InvalidValue {
+                    field: key.to_string(),
+                    field_type: "int".to_string(),
+                    value: format!("{value}. Must be a positive integer"),
+                });
+            }
             serde_json::Value::Number(serde_json::Number::from(n))
         }
         _ => unreachable!(),

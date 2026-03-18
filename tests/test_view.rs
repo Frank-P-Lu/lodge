@@ -441,3 +441,100 @@ fn view_run_meta_flag() {
     let records = json["records"].as_array().unwrap();
     assert_eq!(records.len(), 2);
 }
+
+#[test]
+fn view_create_with_description() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "urgent",
+            "--collection",
+            "tasks",
+            "--where",
+            "priority = 1",
+            "--description",
+            "High priority tasks",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "show", "urgent"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["description"], "High priority tasks");
+}
+
+#[test]
+fn view_update_description() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "v1",
+            "--collection",
+            "tasks",
+            "--description",
+            "Original",
+        ])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args(["view", "update", "v1", "--description", "Updated"])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "show", "v1"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["description"], "Updated");
+}
+
+#[test]
+fn view_list_includes_description() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "v1",
+            "--collection",
+            "tasks",
+            "--description",
+            "My desc",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "list"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr[0]["description"], "My desc");
+}
+
+#[test]
+fn view_create_without_description_has_null() {
+    let dir = setup_with_tasks();
+    common::lodge_cmd(&dir)
+        .args(["view", "create", "v1", "--collection", "tasks"])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "show", "v1"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(json["description"].is_null());
+}

@@ -27,6 +27,7 @@ Single-binary Rust CLI. No server, no HTTP. The agent creates collections via th
 - `src/types.rs` — `FieldType` enum, field parsing, validation
 - `src/output.rs` — JSON/table/CSV formatting (`--format` flag)
 - `src/log.rs` — mutation log queries (`_lodge_log` table)
+- `src/query_track.rs` — query fingerprinting, call-count upsert, view suggestion logic (`_lodge_query_log` table)
 - `src/error.rs` — `LodgeError` enum with `thiserror`
 
 ### Key design decisions
@@ -36,6 +37,8 @@ Single-binary Rust CLI. No server, no HTTP. The agent creates collections via th
 - **Reserved names**: `init`, `create`, `alter`, `sql`, `help`, `log` cannot be used as collection names.
 - **Type system**: text, int, real, bool, date, datetime. Bool stores as INTEGER (0/1). Date/datetime store as TEXT in ISO format.
 - **`_lodge_log` table** records all mutations (add/update/delete) with before/after data, success/failure status, and error messages. Logging happens inside `record.rs` to guarantee coverage for all call sites.
+- **`_lodge_query_log` table** tracks read operations (query, search, view_run) with a unique fingerprint, call count, and last-used timestamp. When a query's count crosses `view_suggest_threshold` (default: 3), a one-time hint is emitted on stderr suggesting a `lodge view create` command. Search and view-run queries never trigger suggestions.
+- **View descriptions**: views support an optional `--description` flag on create/update, stored in the `description` column of `_lodge_views`. Shown in `show` and `list` output.
 - **Field validation** happens at the type layer before insert — dates are parsed with chrono, ints/reals are parsed, bools normalize to 0/1.
 
 ### Data flow

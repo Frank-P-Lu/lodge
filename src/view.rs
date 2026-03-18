@@ -28,6 +28,7 @@ pub fn create_view(
     where_clause: Option<&str>,
     sort: Option<&str>,
     limit: Option<i64>,
+    description: Option<&str>,
 ) -> Result<()> {
     // Validate name (same rules as collection names)
     if !name.chars().all(|c| c.is_alphanumeric() || c == '_')
@@ -47,8 +48,8 @@ pub fn create_view(
 
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     conn.execute(
-        "INSERT INTO _lodge_views (name, collection, where_clause, sort, lim, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![name, collection, where_clause, sort, limit, now],
+        "INSERT INTO _lodge_views (name, collection, where_clause, sort, lim, created_at, description) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![name, collection, where_clause, sort, limit, now, description],
     )?;
 
     Ok(())
@@ -56,7 +57,7 @@ pub fn create_view(
 
 pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
     let mut stmt = conn.prepare(
-        "SELECT name, collection, where_clause, sort, lim, created_at FROM _lodge_views ORDER BY name",
+        "SELECT name, collection, where_clause, sort, lim, created_at, description FROM _lodge_views ORDER BY name",
     )?;
     let rows = stmt.query_map([], |row| {
         let name: String = row.get(0)?;
@@ -65,6 +66,7 @@ pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
         let sort: Option<String> = row.get(3)?;
         let limit: Option<i64> = row.get(4)?;
         let created_at: String = row.get(5)?;
+        let description: Option<String> = row.get(6)?;
         Ok(json!({
             "name": name,
             "collection": collection,
@@ -72,6 +74,7 @@ pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
             "sort": sort,
             "limit": limit,
             "created_at": created_at,
+            "description": description,
         }))
     })?;
 
@@ -84,7 +87,7 @@ pub fn list_views(conn: &Connection) -> Result<Vec<Value>> {
 
 pub fn show_view(conn: &Connection, name: &str) -> Result<Value> {
     conn.query_row(
-        "SELECT name, collection, where_clause, sort, lim, created_at FROM _lodge_views WHERE name = ?1",
+        "SELECT name, collection, where_clause, sort, lim, created_at, description FROM _lodge_views WHERE name = ?1",
         [name],
         |row| {
             let vname: String = row.get(0)?;
@@ -93,6 +96,7 @@ pub fn show_view(conn: &Connection, name: &str) -> Result<Value> {
             let sort: Option<String> = row.get(3)?;
             let limit: Option<i64> = row.get(4)?;
             let created_at: String = row.get(5)?;
+            let description: Option<String> = row.get(6)?;
             Ok(json!({
                 "name": vname,
                 "collection": collection,
@@ -100,6 +104,7 @@ pub fn show_view(conn: &Connection, name: &str) -> Result<Value> {
                 "sort": sort,
                 "limit": limit,
                 "created_at": created_at,
+                "description": description,
             }))
         },
     )
@@ -112,6 +117,7 @@ pub fn update_view(
     where_clause: Option<&str>,
     sort: Option<&str>,
     limit: Option<i64>,
+    description: Option<&str>,
 ) -> Result<()> {
     let mut sets = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -127,6 +133,10 @@ pub fn update_view(
     if let Some(l) = limit {
         sets.push(format!("lim = ?{}", params.len() + 1));
         params.push(Box::new(l));
+    }
+    if let Some(d) = description {
+        sets.push(format!("description = ?{}", params.len() + 1));
+        params.push(Box::new(d.to_string()));
     }
 
     let sql = format!(

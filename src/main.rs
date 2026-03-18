@@ -7,6 +7,7 @@ mod fts;
 mod import;
 mod log;
 mod output;
+mod query_track;
 mod record;
 mod schema;
 mod settings;
@@ -94,14 +95,14 @@ fn run() -> error::Result<()> {
         Some(("create", sub_m)) => handle_create(&cwd, sub_m),
         Some(("alter", sub_m)) => handle_alter(&cwd, sub_m),
         Some(("sql", sub_m)) => handle_sql(&cwd, sub_m, df),
-        Some(("view", sub_m)) => handle_view(&cwd, sub_m, df),
+        Some(("view", sub_m)) => handle_view(&cwd, sub_m, df, &settings),
         Some(("export", sub_m)) => handle_export(&cwd, sub_m, df),
         Some(("snapshot", sub_m)) => handle_snapshot(&cwd, sub_m),
         Some(("restore", sub_m)) => handle_restore(&cwd, sub_m),
         Some(("import", sub_m)) => handle_import(&cwd, sub_m),
         Some(("log", sub_m)) => handle_log(&cwd, sub_m, df),
         Some(("list", sub_m)) => handle_list(&cwd, sub_m, df, &settings),
-        Some(("run", sub_m)) => handle_run_view(&cwd, sub_m, df),
+        Some(("run", sub_m)) => handle_run_view(&cwd, sub_m, df, &settings),
         Some((collection_name, sub_m)) => {
             handle_collection(&cwd, collection_name, sub_m, df, &settings)
         }
@@ -229,7 +230,7 @@ fn handle_sql(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
     Ok(())
 }
 
-fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
+fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) -> error::Result<()> {
     let conn = db::open(cwd)?;
     match sub_m.subcommand() {
         Some(("create", create_m)) => {
@@ -240,7 +241,18 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
             let limit = create_m
                 .get_one::<String>("limit")
                 .and_then(|s| s.parse::<i64>().ok());
-            view::create_view(&conn, name, collection, where_clause, sort, limit)?;
+            let description = create_m
+                .get_one::<String>("description")
+                .map(|s| s.as_str());
+            view::create_view(
+                &conn,
+                name,
+                collection,
+                where_clause,
+                sort,
+                limit,
+                description,
+            )?;
             println!("Created view '{name}'");
             Ok(())
         }
@@ -266,11 +278,14 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
             let limit = update_m
                 .get_one::<String>("limit")
                 .and_then(|s| s.parse::<i64>().ok());
-            view::update_view(&conn, name, where_clause, sort, limit)?;
+            let description = update_m
+                .get_one::<String>("description")
+                .map(|s| s.as_str());
+            view::update_view(&conn, name, where_clause, sort, limit, description)?;
             println!("Updated view '{name}'");
             Ok(())
         }
-        Some(("run", run_m)) => run_view_inner(&conn, run_m, df),
+        Some(("run", run_m)) => run_view_inner(&conn, run_m, df, settings.view_suggest_threshold),
         Some(("delete", delete_m)) => {
             let name = get_arg(delete_m, "name")?;
             view::delete_view(&conn, name)?;
@@ -338,8 +353,9 @@ fn handle_log(cwd: &Path, sub_m: &ArgMatches, df: &str) -> error::Result<()> {
         .get_one::<String>("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
+    let verbose = sub_m.get_flag("verbose");
     let format = get_format(sub_m, df);
-    let results = log::query_log(&conn, collection, limit)?;
+    let results = log::query_log(&conn, collection, limit, verbose)?;
     // Strip before/after from non-JSON formats — inline JSON makes table/csv too wide
     let results = match format {
         output::Format::Json => results,
@@ -389,13 +405,23 @@ fn handle_list(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) ->
     Ok(())
 }
 
-fn handle_run_view(cwd: &Path, run_m: &ArgMatches, df: &str) -> error::Result<()> {
+fn handle_run_view(
+    cwd: &Path,
+    run_m: &ArgMatches,
+    df: &str,
+    settings: &Settings,
+) -> error::Result<()> {
     let conn = db::open(cwd)?;
-    run_view_inner(&conn, run_m, df)
+    run_view_inner(&conn, run_m, df, settings.view_suggest_threshold)
 }
 
 /// Shared logic for `lodge run <view>` and `lodge view run <view>`.
-fn run_view_inner(conn: &Connection, run_m: &ArgMatches, df: &str) -> error::Result<()> {
+fn run_view_inner(
+    conn: &Connection,
+    run_m: &ArgMatches,
+    df: &str,
+    threshold: i64,
+) -> error::Result<()> {
     let name = get_arg(run_m, "name")?;
     let format = get_format(run_m, df);
     let (collection_name, records) = view::run_view(conn, name)?;
@@ -409,6 +435,11 @@ fn run_view_inner(conn: &Connection, run_m: &ArgMatches, df: &str) -> error::Res
     } else {
         println!("{}", output::format_output(&records, &format)?);
     }
+
+    // Track view run (never suggests)
+    let fingerprint = query_track::build_view_run_fingerprint(name);
+    let _ = query_track::track_query(conn, "view_run", name, &fingerprint, threshold);
+
     Ok(())
 }
 
@@ -425,14 +456,16 @@ fn handle_collection(
 
     match sub_m.subcommand() {
         Some(("add", add_m)) => handle_collection_add(&conn, &coll, collection_name, add_m, df),
-        Some(("query", query_m)) => handle_collection_query(&conn, &coll, query_m, df),
+        Some(("query", query_m)) => handle_collection_query(&conn, &coll, query_m, df, settings),
         Some(("update", update_m)) => {
             handle_collection_update(&conn, &coll, collection_name, update_m, df)
         }
         Some(("delete", delete_m)) => {
             handle_collection_delete(&conn, &coll, collection_name, delete_m, df)
         }
-        Some(("search", search_m)) => handle_collection_search(&conn, &coll, search_m, df),
+        Some(("search", search_m)) => {
+            handle_collection_search(&conn, &coll, search_m, df, settings)
+        }
         Some(("streak", streak_m)) => handle_collection_streak(&conn, &coll, streak_m, df),
         Some(("gaps", gaps_m)) => handle_collection_gaps(&conn, &coll, gaps_m, df),
         Some(("rolling-avg", avg_m)) => handle_collection_rolling_avg(&conn, &coll, avg_m, df),
@@ -473,6 +506,7 @@ fn handle_collection_query(
     coll: &Collection,
     query_m: &ArgMatches,
     df: &str,
+    settings: &Settings,
 ) -> error::Result<()> {
     let where_clause = query_m.get_one::<String>("where").map(|s| s.as_str());
     let sort = query_m.get_one::<String>("sort").map(|s| s.as_str());
@@ -487,6 +521,30 @@ fn handle_collection_query(
     let results =
         record::query_records_with_fields(conn, coll, where_clause, sort, limit, fields_slice)?;
     println!("{}", output::format_output(&results, &format)?);
+
+    // Track query
+    let fingerprint = query_track::build_query_fingerprint(
+        &coll.name,
+        where_clause,
+        sort,
+        limit,
+        fields_str.map(|s| s.as_str()),
+    );
+    let track = query_track::track_query(
+        conn,
+        "query",
+        &coll.name,
+        &fingerprint,
+        settings.view_suggest_threshold,
+    )?;
+    if track.newly_suggested {
+        let cmd = query_track::build_suggestion_command(&coll.name, where_clause, sort, limit);
+        eprintln!(
+            "Hint: This query has been run {} times. Save it as a view: {}",
+            track.call_count, cmd
+        );
+    }
+
     Ok(())
 }
 
@@ -540,6 +598,7 @@ fn handle_collection_search(
     coll: &Collection,
     search_m: &ArgMatches,
     df: &str,
+    settings: &Settings,
 ) -> error::Result<()> {
     let query = get_arg(search_m, "query")?;
     let limit = search_m
@@ -548,6 +607,17 @@ fn handle_collection_search(
     let format = get_format(search_m, df);
     let results = fts::search_records(conn, coll, query, limit)?;
     println!("{}", output::format_output(&results, &format)?);
+
+    // Track search (never suggests)
+    let fingerprint = query_track::build_search_fingerprint(&coll.name, query, limit);
+    let _ = query_track::track_query(
+        conn,
+        "search",
+        &coll.name,
+        &fingerprint,
+        settings.view_suggest_threshold,
+    );
+
     Ok(())
 }
 
