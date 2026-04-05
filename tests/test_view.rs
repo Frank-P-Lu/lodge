@@ -538,3 +538,323 @@ fn view_create_without_description_has_null() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(json["description"].is_null());
 }
+
+// --- SQL views ---
+
+fn setup_two_collections() -> tempfile::TempDir {
+    let dir = common::setup();
+    common::lodge_cmd(&dir)
+        .args(["create", "tasks", "--fields", "title:text, priority:int"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["create", "notes", "--fields", "body:text"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["tasks", "add", "--title", "fix bug", "--priority", "1"])
+        .assert()
+        .success();
+    common::lodge_cmd(&dir)
+        .args(["notes", "add", "--body", "remember this"])
+        .assert()
+        .success();
+    dir
+}
+
+#[test]
+fn sql_view_create_succeeds() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT 'task' as source, title as label FROM tasks UNION ALL SELECT 'note', body FROM notes",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created view 'dashboard'"));
+}
+
+#[test]
+fn sql_view_show_displays_sql() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "show", "dashboard"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["sql"], "SELECT title FROM tasks");
+    assert!(json["collection"].is_null());
+}
+
+#[test]
+fn sql_view_run_returns_results() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT 'task' as source, title as label FROM tasks UNION ALL SELECT 'note', body FROM notes",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "run", "dashboard"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+}
+
+#[test]
+fn sql_view_mutual_exclusivity() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "bad",
+            "--sql",
+            "SELECT 1",
+            "--collection",
+            "tasks",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn sql_view_rejects_where_sort_limit() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "bad",
+            "--sql",
+            "SELECT 1",
+            "--where",
+            "x=1",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn sql_view_requires_sql_or_collection() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args(["view", "create", "bad"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
+}
+
+#[test]
+fn sql_view_meta_flag() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "run", "dashboard", "--meta"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["view"], "dashboard");
+    assert!(json["collection"].is_null());
+    assert!(json["records"].is_array());
+}
+
+#[test]
+fn sql_view_list_includes_sql() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "list"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr[0]["sql"], "SELECT title FROM tasks");
+    assert!(arr[0]["collection"].is_null());
+}
+
+#[test]
+fn sql_view_update_sql() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "update",
+            "dashboard",
+            "--sql",
+            "SELECT body FROM notes",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated view 'dashboard'"));
+
+    let output = common::lodge_cmd(&dir)
+        .args(["view", "run", "dashboard"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["body"], "remember this");
+}
+
+#[test]
+fn sql_view_update_rejects_where() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args(["view", "update", "dashboard", "--where", "x=1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Cannot use --where, --sort, or --limit on an SQL view",
+        ));
+}
+
+#[test]
+fn sql_view_run_shorthand() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title as label FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    let output = common::lodge_cmd(&dir)
+        .args(["run", "dashboard"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["label"], "fix bug");
+}
+
+#[test]
+fn sql_view_bad_query_errors() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "bad",
+            "--sql",
+            "SELECT FROM nonexistent_table WHERE",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Error"));
+}
+
+#[test]
+fn sql_view_with_format() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "dashboard",
+            "--sql",
+            "SELECT title FROM tasks",
+        ])
+        .assert()
+        .success();
+
+    common::lodge_cmd(&dir)
+        .args(["view", "run", "dashboard", "--format", "table"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("title"))
+        .stdout(predicate::str::contains("fix bug"));
+}
+
+#[test]
+fn sql_view_rejects_non_select() {
+    let dir = setup_two_collections();
+    common::lodge_cmd(&dir)
+        .args([
+            "view",
+            "create",
+            "bad",
+            "--sql",
+            "INSERT INTO tasks (title) VALUES ('x')",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("SELECT"));
+}

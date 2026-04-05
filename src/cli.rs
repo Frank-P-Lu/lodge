@@ -106,8 +106,13 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                         .arg(
                             Arg::new("collection")
                                 .long("collection")
-                                .required(true)
                                 .help("Collection to query"),
+                        )
+                        .arg(
+                            Arg::new("sql")
+                                .long("sql")
+                                .conflicts_with_all(["where", "sort", "limit"])
+                                .help("Raw SQL query for the view"),
                         )
                         .arg(Arg::new("where").long("where").help("SQL WHERE clause"))
                         .arg(Arg::new("sort").long("sort").help("ORDER BY clause"))
@@ -120,6 +125,11 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                             Arg::new("description")
                                 .long("description")
                                 .help("Description of what this view represents"),
+                        )
+                        .group(
+                            clap::ArgGroup::new("view_source")
+                                .args(["collection", "sql"])
+                                .required(true),
                         ),
                 )
                 .subcommand(
@@ -160,9 +170,14 @@ pub fn build_cli(collections: &[Collection], view_names: &[String]) -> Command {
                                 .long("description")
                                 .help("New description for the view"),
                         )
+                        .arg(
+                            Arg::new("sql")
+                                .long("sql")
+                                .help("New raw SQL query for the view"),
+                        )
                         .group(
                             clap::ArgGroup::new("update_fields")
-                                .args(["where", "sort", "limit", "description"])
+                                .args(["where", "sort", "limit", "description", "sql"])
                                 .required(true)
                                 .multiple(true),
                         ),

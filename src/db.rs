@@ -62,6 +62,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
     }
     create_views_table(conn)?;
     migrate_views_description(conn)?;
+    migrate_views_sql_column(conn)?;
     create_fts_meta_table(conn)?;
     create_log_table(conn)?;
     create_query_log_table(conn)?;
@@ -134,7 +135,8 @@ fn create_views_table(conn: &Connection) -> Result<()> {
             sort       TEXT,
             lim        INTEGER,
             created_at TEXT NOT NULL,
-            description TEXT
+            description TEXT,
+            sql        TEXT
         );",
     )?;
     Ok(())
@@ -143,5 +145,11 @@ fn create_views_table(conn: &Connection) -> Result<()> {
 fn migrate_views_description(conn: &Connection) -> Result<()> {
     // Attempt to add description column; ignore error if it already exists
     let _ = conn.execute_batch("ALTER TABLE _lodge_views ADD COLUMN description TEXT");
+    Ok(())
+}
+
+fn migrate_views_sql_column(conn: &Connection) -> Result<()> {
+    // Attempt to add sql column; ignore error if it already exists
+    let _ = conn.execute_batch("ALTER TABLE _lodge_views ADD COLUMN sql TEXT");
     Ok(())
 }

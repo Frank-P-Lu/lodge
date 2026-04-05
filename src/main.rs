@@ -267,24 +267,28 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) ->
     match sub_m.subcommand() {
         Some(("create", create_m)) => {
             let name = get_arg(create_m, "name")?;
-            let collection = get_arg(create_m, "collection")?;
-            let where_clause = create_m.get_one::<String>("where").map(|s| s.as_str());
-            let sort = create_m.get_one::<String>("sort").map(|s| s.as_str());
-            let limit = create_m
-                .get_one::<String>("limit")
-                .and_then(|s| s.parse::<i64>().ok());
             let description = create_m
                 .get_one::<String>("description")
                 .map(|s| s.as_str());
-            view::create_view(
-                &conn,
-                name,
-                collection,
-                where_clause,
-                sort,
-                limit,
-                description,
-            )?;
+            if let Some(sql) = create_m.get_one::<String>("sql") {
+                view::create_sql_view(&conn, name, sql, description)?;
+            } else {
+                let collection = get_arg(create_m, "collection")?;
+                let where_clause = create_m.get_one::<String>("where").map(|s| s.as_str());
+                let sort = create_m.get_one::<String>("sort").map(|s| s.as_str());
+                let limit = create_m
+                    .get_one::<String>("limit")
+                    .and_then(|s| s.parse::<i64>().ok());
+                view::create_view(
+                    &conn,
+                    name,
+                    collection,
+                    where_clause,
+                    sort,
+                    limit,
+                    description,
+                )?;
+            }
             println!("Created view '{name}'");
             Ok(())
         }
@@ -313,7 +317,8 @@ fn handle_view(cwd: &Path, sub_m: &ArgMatches, df: &str, settings: &Settings) ->
             let description = update_m
                 .get_one::<String>("description")
                 .map(|s| s.as_str());
-            view::update_view(&conn, name, where_clause, sort, limit, description)?;
+            let sql = update_m.get_one::<String>("sql").map(|s| s.as_str());
+            view::update_view(&conn, name, where_clause, sort, limit, description, sql)?;
             println!("Updated view '{name}'");
             Ok(())
         }
@@ -452,9 +457,13 @@ fn run_view_inner(
     let format = get_format(run_m, df);
     let (collection_name, records) = view::run_view(conn, name)?;
     if run_m.get_flag("meta") {
+        let collection_val = match &collection_name {
+            Some(c) => serde_json::Value::String(c.clone()),
+            None => serde_json::Value::Null,
+        };
         let wrapped = serde_json::json!({
             "view": name,
-            "collection": collection_name,
+            "collection": collection_val,
             "records": records,
         });
         println!("{wrapped}");
